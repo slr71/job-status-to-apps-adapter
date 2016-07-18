@@ -14,19 +14,19 @@ package main
 
 import (
 	"bytes"
-	"configurate"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
-	"logcabin"
-	"messaging"
 	"net/http"
 	"os"
 	"time"
 	"version"
 
+	"github.com/cyverse-de/configurate"
+	"github.com/cyverse-de/logcabin"
+	"github.com/cyverse-de/messaging"
 	_ "github.com/lib/pq"
 	"github.com/olebedev/config"
 )
