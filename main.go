@@ -59,13 +59,14 @@ type DBJobStatusUpdate struct {
 }
 
 // Unpropagated returns a []string of the UUIDs for jobs that have steps that
-// haven't been propagated yet.
-func Unpropagated(d *sql.DB) ([]string, error) {
+// haven't been propagated yet but haven't passed their retry limit.
+func Unpropagated(d *sql.DB, maxRetries int64) ([]string, error) {
 	queryStr := `
 	select distinct external_id
 	  from job_status_updates
-	 where propagated = 'false'`
-	rows, err := d.Query(queryStr)
+	 where propagated = 'false'
+	   and propagation_attempts < $1`
+	rows, err := d.Query(queryStr, maxRetries)
 	if err != nil {
 		return nil, err
 	}
@@ -160,9 +161,9 @@ func (p *Propagator) Propagate(status *DBJobStatusUpdate) error {
 	return nil
 }
 
-// JobUpdates returns a list of JobUpdate's that are sorted by their SentOn
-// field.
-func (p *Propagator) JobUpdates(extID string) ([]DBJobStatusUpdate, error) {
+// JobUpdates returns a list of JobUpdate's which haven't exceeded their
+// retries, sorted by their SentOn field.
+func (p *Propagator) JobUpdates(extID string, maxRetries int64) ([]DBJobStatusUpdate, error) {
 	queryStr := `
 	select id,
 				 external_id,
@@ -177,8 +178,9 @@ func (p *Propagator) JobUpdates(extID string) ([]DBJobStatusUpdate, error) {
 				 created_date
 	  from job_status_updates
 	 where external_id = $1
+	   and propagation_attempts < $2
 	order by sent_on asc`
-	rows, err := p.tx.Query(queryStr, extID)
+	rows, err := p.tx.Query(queryStr, extID, maxRetries)
 	if err != nil {
 		p.rollback = true
 		return nil, err
@@ -240,9 +242,9 @@ func (p *Propagator) StorePropagationAttempts(update *DBJobStatusUpdate) error {
 	id := update.ID
 	lastAttemptTime := time.Now().UnixNano() / int64(time.Millisecond)
 	insertStr := `UPDATE ONLY job_status_updates
-												SET propagation_attempts = $2,
-														last_propagation_attempt = $3
-											WHERE id = $1`
+		         SET propagation_attempts = $2,
+		             last_propagation_attempt = $3
+		       WHERE id = $1`
 	_, err := p.tx.Exec(insertStr, id, newVal, lastAttemptTime)
 	return err
 }
@@ -257,7 +259,7 @@ func (p *Propagator) StorePropagationAttempts(update *DBJobStatusUpdate) error {
 //   update.
 // * Commit the transaction.
 func ScanAndPropagate(d *sql.DB, maxRetries int64, appsURI string) error {
-	unpropped, err := Unpropagated(d)
+	unpropped, err := Unpropagated(d, maxRetries)
 	if err != nil {
 		return err
 	}
@@ -268,7 +270,7 @@ func ScanAndPropagate(d *sql.DB, maxRetries int64, appsURI string) error {
 			return err
 		}
 
-		updates, err := proper.JobUpdates(jobExtID)
+		updates, err := proper.JobUpdates(jobExtID, maxRetries)
 		if err != nil {
 			return err
 		}
