@@ -17,8 +17,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	_ "expvar"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"time"
@@ -363,6 +365,13 @@ func main() {
 	}
 	logcabin.Info.Println("Connected to the database")
 
+	go func() {
+		sock, err := net.Listen("tcp", "0.0.0.0:60000")
+		if err != nil {
+			logcabin.Error.Fatal(err)
+		}
+		http.Serve(sock, nil)
+	}()
 	for {
 		if err = ScanAndPropagate(db, *maxRetries, appsURI); err != nil {
 			logcabin.Error.Fatal(err)
