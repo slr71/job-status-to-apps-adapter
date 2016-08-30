@@ -30,7 +30,7 @@ import (
 	"github.com/cyverse-de/messaging"
 	"github.com/cyverse-de/version"
 	_ "github.com/lib/pq"
-	"github.com/olebedev/config"
+	"github.com/spf13/viper"
 )
 
 // JobStatusUpdate contains the data POSTed to the apps service.
@@ -311,7 +311,7 @@ func main() {
 		dbURI       = flag.String("db", "", "The URI used to connect to the database")
 		maxRetries  = flag.Int64("retries", 3, "The maximum number of propagation retries to make")
 		err         error
-		cfg         *config.Config
+		cfg         *viper.Viper
 		db          *sql.DB
 		appsURI     string
 	)
@@ -331,7 +331,7 @@ func main() {
 		os.Exit(-1)
 	}
 
-	cfg, err = configurate.Init(*cfgPath)
+	cfg, err = configurate.InitDefaults(*cfgPath, configurate.JobServicesDefaults)
 	if err != nil {
 		logcabin.Error.Print(err)
 		os.Exit(-1)
@@ -340,18 +340,12 @@ func main() {
 	logcabin.Info.Println("Done reading config.")
 
 	if *dbURI == "" {
-		*dbURI, err = cfg.String("db.uri")
-		if err != nil {
-			logcabin.Error.Fatal(err)
-		}
+		*dbURI = cfg.GetString("db.uri")
 	} else {
 		cfg.Set("db.uri", *dbURI)
 	}
 
-	appsURI, err = cfg.String("apps.callbacks_uri")
-	if err != nil {
-		logcabin.Error.Fatal(err)
-	}
+	appsURI = cfg.GetString("apps.callbacks_uri")
 
 	logcabin.Info.Println("Connecting to the database...")
 	db, err = sql.Open("postgres", *dbURI)
