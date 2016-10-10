@@ -1,10 +1,11 @@
-FROM golang:1.7-alpine
+FROM discoenv/golang-base:master
+
+ENV CONF_TEMPLATE=/go/src/github.com/cyverse-de/job-status-to-apps-adapter/jobservices.yml.tmpl
+ENV CONF_FILENAME=jobservices.yml
+ENV PROGRAM=job-status-to-apps-adapter
 
 COPY . /go/src/github.com/cyverse-de/job-status-to-apps-adapter
 RUN go install github.com/cyverse-de/job-status-to-apps-adapter
-
-ENTRYPOINT ["job-status-to-apps-adapter"]
-CMD ["--help"]
 
 ARG git_commit=unknown
 ARG version="2.9.0"
