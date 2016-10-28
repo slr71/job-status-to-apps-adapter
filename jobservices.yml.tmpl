@@ -1,0 +1,47 @@
+{{- with $base := (printf "configs/%s" (env "DE_ENV")) -}}
+{{- if tree (printf "%s/amqp" $base) -}}
+amqp:
+  {{ with $v := (key (printf "%s/amqp/uri" $base)) }}uri: {{ $v }}{{ end }}
+  {{- if tree (printf "%s/amqp/exchange" $base) }}
+  exchange:
+    {{ with $v := (key (printf "%s/amqp/exchange/name" $base)) }}name: {{ $v }}{{ end }}
+    {{ with $v := (key (printf "%s/amqp/exchange/type" $base)) }}type: {{ $v }}{{ end }}
+  {{- end }}
+{{- end }}
+
+{{- if tree (printf "%s/apps" $base) }}
+apps:
+  {{ with $v := (key (printf "%s/apps/de-callback-uri" $base)) }}callbacks_uri: "{{ $v }}"{{ end }}
+{{- end }}
+
+{{- if tree (printf "%s/condor" $base) }}
+condor:
+  {{ with $v := (key (printf "%s/condor/condor_config" $base)) }}condor_config: {{ $v }}{{ end }}
+  {{ with $v := (key (printf "%s/condor/path_env_var" $base)) }}path_env_var: {{ $v }}{{ end }}
+  {{ with $v := (key (printf "%s/condor/log_path" $base)) }}log_path: {{ $v }}{{ end }}
+  {{ with $v := (key (printf "%s/condor/request_disk" $base)) }}request_disk: {{ $v }}{{ end }}
+  {{ with $v := (key (printf "%s/condor/filter_files" $base)) }}filter_files: {{ $v }}{{ end }}
+{{- end }}
+
+{{- if tree (printf "%s/de-db" $base) }}
+db:
+  {{ with $v := (key (printf "%s/de-db/uri" $base)) }}uri: {{ $v }}{{ end }}
+{{- end }}
+
+{{- if tree (printf "%s/irods" $base) }}
+irods:
+  {{ with $v := (key (printf "%s/irods/user" $base)) }}user: "{{ $v }}"{{ end }}
+  {{ with $v := (key (printf "%s/irods/pass" $base)) }}pass: "{{ $v }}"{{ end }}
+  {{ with $v := (key (printf "%s/irods/host" $base)) }}host: "{{ $v }}"{{ end }}
+  {{ with $v := (key (printf "%s/irods/port" $base)) }}port: "{{ $v }}"{{ end }}
+  {{ with $v := (key (printf "%s/irods/base" $base)) }}base: "{{ $v }}"{{ end }}
+  {{ with $v := (key (printf "%s/irods/resc" $base)) }}resc: "{{ $v }}"{{ end }}
+  {{ with $v := (key (printf "%s/irods/zone" $base)) }}zone: "{{ $v }}"{{ end }}
+{{- end }}
+
+{{- if tree (printf "%s/porklock" $base) }}
+porklock:
+  {{ with $v := (key (printf "%s/porklock/image" $base)) }}image: {{ $v }}{{ end }}
+  {{ with $v := (key (printf "%s/porklock/tag" $base)) }}tag: {{ $v }}{{ end }}
+{{- end -}}
+{{- end -}}
