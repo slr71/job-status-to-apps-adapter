@@ -256,56 +256,28 @@ func (p *Propagator) StorePropagationAttempts(update *DBJobStatusUpdate) error {
 	return err
 }
 
-// ScanAndPropagate is contains the core logic. Here's what it does:
-// * Gets all job IDs with a status update that hasn't been propagated yet.
-// * For each of those jobs, start a database transaction and get all of the
-//   associcated status updates from the database.
-// * Mark any unpropagated updates that appear __before__ a propagated update as
-//   propagated.
-// * Propagate any unpropagated steps that appear after the last propagated
-//   update.
-// * Commit the transaction.
-func ScanAndPropagate(d *sql.DB, maxRetries int64, appsURI string) error {
-	unpropped, err := Unpropagated(d, maxRetries)
-	if err != nil {
-		return err
-	}
-
-	for _, jobExtID := range unpropped {
-		proper, err := NewPropagator(d, appsURI)
-		if err != nil {
-			return err
-		}
-
-		updates, err := proper.JobUpdates(jobExtID, maxRetries)
-		if err != nil {
-			return err
-		}
-
-		for _, subupdates := range updates {
-			if !subupdates.Propagated && subupdates.PropagationAttempts < maxRetries {
-				logcabin.Info.Printf("Propagating %#v", subupdates)
-				if err = proper.Propagate(&subupdates); err != nil {
+// ScanAndPropagate marks any unpropagated updates that appear __before__ a
+// propagated update as propagated.
+func (p *Propagator) ScanAndPropagate(updates []DBJobStatusUpdate, maxRetries int64) error {
+	var err error
+	for _, subupdates := range updates {
+		if !subupdates.Propagated && subupdates.PropagationAttempts < maxRetries {
+			logcabin.Info.Printf("Propagating %#v", subupdates)
+			if err = p.Propagate(&subupdates); err != nil {
+				logcabin.Error.Print(err)
+				subupdates.PropagationAttempts = subupdates.PropagationAttempts + 1
+				if err = p.StorePropagationAttempts(&subupdates); err != nil {
 					logcabin.Error.Print(err)
-					subupdates.PropagationAttempts = subupdates.PropagationAttempts + 1
-					if err = proper.StorePropagationAttempts(&subupdates); err != nil {
-						logcabin.Error.Print(err)
-					}
-					continue
 				}
-				logcabin.Info.Printf("Marking update %s as propagated", subupdates.ID)
-				if err = proper.MarkPropagated(subupdates.ID); err != nil {
-					logcabin.Error.Print(err)
-					continue
-				}
+				continue
+			}
+			logcabin.Info.Printf("Marking update %s as propagated", subupdates.ID)
+			if err = p.MarkPropagated(subupdates.ID); err != nil {
+				logcabin.Error.Print(err)
+				continue
 			}
 		}
-
-		if err = proper.Finished(); err != nil {
-			logcabin.Error.Print(err)
-		}
 	}
-
 	return nil
 }
 
@@ -458,9 +430,31 @@ func main() {
 	}()
 
 	for {
-		if err = ScanAndPropagate(db, *maxRetries, appsURI); err != nil {
+		unpropped, err := Unpropagated(db, *maxRetries)
+		if err != nil {
 			logcabin.Error.Fatal(err)
 		}
+
+		for _, jobExtID := range unpropped {
+			proper, err := NewPropagator(db, appsURI)
+			if err != nil {
+				logcabin.Error.Fatal(err)
+			}
+
+			updates, err := proper.JobUpdates(jobExtID, *maxRetries)
+			if err != nil {
+				logcabin.Error.Fatal(err)
+			}
+
+			if err = proper.ScanAndPropagate(updates, *maxRetries); err != nil {
+				logcabin.Error.Fatal(err)
+			}
+
+			if err = proper.Finished(); err != nil {
+				logcabin.Error.Print(err)
+			}
+		}
+
 		time.Sleep(5 * time.Second)
 	}
 }
