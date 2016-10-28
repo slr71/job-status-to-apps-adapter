@@ -281,18 +281,24 @@ func (p *Propagator) ScanAndPropagate(updates []DBJobStatusUpdate, maxRetries in
 	return nil
 }
 
+// Messenger defines an interface for handling AMQP operations. This is the
+// subset of functionality needed by job-status-to-apps-adapter.
+type Messenger interface {
+	AddConsumer(string, string, string, string, messaging.MessageHandler)
+	Close()
+	Listen()
+	Publish(string, []byte) error
+	SetupPublishing(string) error
+}
+
 // EventHandler processes incoming and outgoing event messages.
 type EventHandler struct {
-	client                                       *messaging.Client
+	client                                       Messenger
 	exchange, exchangeType, queueName, listenKey string
 }
 
 // NewEventHandler returns a newly initialized and configured *EventHandler.
-func NewEventHandler(uri, exchange, exchangeType, queueName, listenKey string) (*EventHandler, error) {
-	client, err := messaging.NewClient(uri, false)
-	if err != nil {
-		return nil, err
-	}
+func NewEventHandler(client Messenger, exchange, exchangeType, queueName, listenKey string) *EventHandler {
 	handler := &EventHandler{
 		client:       client,
 		exchange:     exchange,
@@ -301,7 +307,7 @@ func NewEventHandler(uri, exchange, exchangeType, queueName, listenKey string) (
 		listenKey:    listenKey,
 	}
 	go handler.client.Listen()
-	return handler, err
+	return handler
 }
 
 // Init sets up AMQP publishing and adds the Route function as message handler.
@@ -396,8 +402,13 @@ func main() {
 	exchangeName := cfg.GetString("amqp.exchange.name")
 	exchangeType := cfg.GetString("amqp.exchange.type")
 
-	eventer, err := NewEventHandler(
-		amqpURI,
+	client, err := messaging.NewClient(amqpURI, false)
+	if err != nil {
+		logcabin.Error.Fatal(err)
+	}
+
+	eventer := NewEventHandler(
+		client,
 		exchangeName,
 		exchangeType,
 		*eventsQueue,
