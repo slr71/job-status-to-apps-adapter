@@ -48,6 +48,9 @@ func hostname() string {
 	return h
 }
 
+// EventEmitter is a function that should send an event to the AMQP broker.
+type EventEmitter func(event, service string, update *DBJobStatusUpdate) error
+
 // JobStatusUpdate contains the data POSTed to the apps service.
 type JobStatusUpdate struct {
 	Status         string `json:"status"`
@@ -106,13 +109,14 @@ func Unpropagated(d *sql.DB, maxRetries int64) ([]string, error) {
 type Propagator struct {
 	db       *sql.DB
 	tx       *sql.Tx
+	emit     EventEmitter
 	rollback bool
 	appsURI  string
 }
 
 // NewPropagator returns a *Propagator that has been initialized with a new
 // transaction.
-func NewPropagator(d *sql.DB, appsURI string) (*Propagator, error) {
+func NewPropagator(d *sql.DB, appsURI string, emit EventEmitter) (*Propagator, error) {
 	t, err := d.Begin()
 	if err != nil {
 		return nil, err
@@ -121,6 +125,7 @@ func NewPropagator(d *sql.DB, appsURI string) (*Propagator, error) {
 		db:      d,
 		tx:      t,
 		appsURI: appsURI,
+		emit:    emit,
 	}, nil
 }
 
@@ -165,13 +170,21 @@ func (p *Propagator) Propagate(status *DBJobStatusUpdate) error {
 	logcabin.Info.Printf("Sending job status to %s in the propagate function for job %s", p.appsURI, jsu.UUID)
 	resp, err := http.Post(p.appsURI, "application/json", buf)
 	if err != nil {
+		p.emit("propagate-failed", fmt.Sprintf("error propagating job %s: %s", status.ExternalID, err), status)
 		logcabin.Error.Printf("Error sending job status to %s in the propagate function for job %s: %#v", p.appsURI, jsu.UUID, err)
 		return err
 	}
 	defer resp.Body.Close()
 
+	p.emit("propagate", fmt.Sprintf("sent job %s to apps", status.ExternalID), status)
+
 	logcabin.Info.Printf("Response from %s in the propagate function for job %s is: %s", p.appsURI, jsu.UUID, resp.Status)
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		p.emit(
+			"propagate-failed",
+			fmt.Sprintf("error propagating job %s: HTTP status code %d from apps", status.ExternalID, resp.StatusCode),
+			status,
+		)
 		return errors.New("bad response")
 	}
 
@@ -482,7 +495,7 @@ func main() {
 		}
 
 		for _, jobExtID := range unpropped {
-			proper, err := NewPropagator(db, appsURI)
+			proper, err := NewPropagator(db, appsURI, eventer.Emit)
 			if err != nil {
 				logcabin.Error.Fatal(err)
 			}

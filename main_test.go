@@ -65,7 +65,12 @@ func TestNewPropagator(t *testing.T) {
 
 	mock.ExpectBegin()
 
-	p, err := NewPropagator(db, "uri")
+	emitted := false
+
+	p, err := NewPropagator(db, "uri", func(event, message string, update *DBJobStatusUpdate) error {
+		emitted = true
+		return nil
+	})
 	if err != nil {
 		t.Errorf("error calling NewPropagator(): %s", err)
 	}
@@ -85,6 +90,10 @@ func TestNewPropagator(t *testing.T) {
 	if p.appsURI != "uri" {
 		t.Errorf("appsURI was %s rather than 'uri'", p.appsURI)
 	}
+	p.emit("event", "message", nil)
+	if !emitted {
+		t.Error("emitted was false")
+	}
 }
 
 func TestFinished(t *testing.T) {
@@ -97,7 +106,9 @@ func TestFinished(t *testing.T) {
 	mock.ExpectBegin()
 	mock.ExpectCommit()
 
-	p, err := NewPropagator(db, "uri")
+	p, err := NewPropagator(db, "uri", func(event, message string, update *DBJobStatusUpdate) error {
+		return nil
+	})
 	if err != nil {
 		t.Errorf("error calling NewPropagator(): %s", err)
 	}
@@ -122,7 +133,9 @@ func TestFinishedWithRollback(t *testing.T) {
 	mock.ExpectBegin()
 	mock.ExpectRollback()
 
-	p, err := NewPropagator(db, "uri")
+	p, err := NewPropagator(db, "uri", func(event, message string, update *DBJobStatusUpdate) error {
+		return nil
+	})
 	if err != nil {
 		t.Errorf("error calling NewPropagator(): %s", err)
 	}
@@ -157,7 +170,9 @@ func TestPropagate(t *testing.T) {
 
 	mock.ExpectBegin()
 
-	p, err := NewPropagator(db, server.URL)
+	p, err := NewPropagator(db, server.URL, func(event, message string, update *DBJobStatusUpdate) error {
+		return nil
+	})
 	if err != nil {
 		t.Errorf("error calling NewPropagator(): %s", err)
 	}
@@ -237,7 +252,9 @@ func TestJobUpdates(t *testing.T) {
 		WithArgs("external-id", 1).
 		WillReturnRows(rows)
 
-	p, err := NewPropagator(db, "uri")
+	p, err := NewPropagator(db, "uri", func(event, message string, update *DBJobStatusUpdate) error {
+		return nil
+	})
 	if err != nil {
 		t.Errorf("error calling NewPropagator(): %s", err)
 	}
@@ -308,7 +325,9 @@ func TestMarkPropagated(t *testing.T) {
 		WithArgs("1").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
-	p, err := NewPropagator(db, "uri")
+	p, err := NewPropagator(db, "uri", func(event, message string, update *DBJobStatusUpdate) error {
+		return nil
+	})
 	if err != nil {
 		t.Errorf("error calling NewPropagator(): %s", err)
 	}
@@ -400,7 +419,9 @@ func TestStorePropagationAttempts(t *testing.T) {
 		CreatedDate:         n,
 	}
 
-	p, err := NewPropagator(db, "uri")
+	p, err := NewPropagator(db, "uri", func(event, message string, update *DBJobStatusUpdate) error {
+		return nil
+	})
 	if err != nil {
 		t.Errorf("error calling NewPropagator(): %s", err)
 	}
@@ -445,7 +466,9 @@ func TestScanAndPropagate(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p, err := NewPropagator(db, server.URL)
+	p, err := NewPropagator(db, server.URL, func(event, message string, update *DBJobStatusUpdate) error {
+		return nil
+	})
 	if err != nil {
 		t.Errorf("error calling NewPropagator(): %s", err)
 	}
@@ -496,7 +519,9 @@ func TestScanAndPropagateWithServerError(t *testing.T) {
 		WithArgs("id", 1, AnyInt64{}).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
-	p, err := NewPropagator(db, "uri")
+	p, err := NewPropagator(db, "uri", func(event, message string, update *DBJobStatusUpdate) error {
+		return nil
+	})
 	if err != nil {
 		t.Errorf("error calling NewPropagator(): %s", err)
 	}
