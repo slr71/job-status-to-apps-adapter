@@ -694,7 +694,7 @@ func TestRouteUnknown(t *testing.T) {
 	}
 }
 
-func TestSend(t *testing.T) {
+func TestEmit(t *testing.T) {
 	n := time.Now()
 	succeeded := string(messaging.SucceededState)
 	update := &DBJobStatusUpdate{
@@ -716,7 +716,7 @@ func TestSend(t *testing.T) {
 	if handler == nil {
 		t.Error("handler was nil")
 	}
-	if err := handler.Send("event", "message", update); err != nil {
+	if err := handler.Emit("event", "message", update); err != nil {
 		t.Errorf("error sending event: %s", err)
 	}
 	mm := handler.client.(*MockMessenger)

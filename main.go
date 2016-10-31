@@ -378,8 +378,8 @@ func (e *EventHandler) Ping(delivery amqp.Delivery) {
 	}
 }
 
-// Send emits an event over AMQP.
-func (e *EventHandler) Send(event, message string, update *DBJobStatusUpdate) error {
+// Emit emits an event over AMQP.
+func (e *EventHandler) Emit(event, message string, update *DBJobStatusUpdate) error {
 	ev := eventFromUpdate(event, "job-status-to-apps-adapter", message, update)
 	j, err := json.Marshal(ev)
 	if err != nil {
