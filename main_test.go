@@ -13,6 +13,7 @@ import (
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
 	"github.com/cyverse-de/configurate"
+	"github.com/cyverse-de/go-events/jobevents"
 	"github.com/cyverse-de/go-events/ping"
 	"github.com/cyverse-de/messaging"
 	"github.com/spf13/viper"
@@ -690,5 +691,115 @@ func TestRouteUnknown(t *testing.T) {
 	numMessages := len(mm.publishedMessages)
 	if numMessages != 0 {
 		t.Errorf("numMessages was %d instead of 0", numMessages)
+	}
+}
+
+func TestSend(t *testing.T) {
+	n := time.Now()
+	succeeded := string(messaging.SucceededState)
+	update := &DBJobStatusUpdate{
+		ID:                  "id",
+		Status:              succeeded,
+		ExternalID:          "external-id",
+		Message:             "message",
+		SentFrom:            "sent-from",
+		SentFromHostname:    "sent-from-hostname",
+		SentOn:              0,
+		Propagated:          false,
+		PropagationAttempts: 0,
+		CreatedDate:         n,
+	}
+	client := &MockMessenger{
+		publishedMessages: make([]MockMessage, 0),
+	}
+	handler := NewEventHandler(client, "exchange", "exchange-type", "queue-name", "listen-key")
+	if handler == nil {
+		t.Error("handler was nil")
+	}
+	if err := handler.Send("event", "message", update); err != nil {
+		t.Errorf("error sending event: %s", err)
+	}
+	mm := handler.client.(*MockMessenger)
+	numMessages := len(mm.publishedMessages)
+	if numMessages != 1 {
+		t.Errorf("numMessages was %d instead of 1", numMessages)
+	}
+	key := mm.publishedMessages[0].key
+	expectedKey := fmt.Sprintf(eventBase, "event")
+	if key != expectedKey {
+		t.Errorf("message key was %s instead of %s", key, expectedKey)
+	}
+	parsed := &jobevents.JobEvent{}
+	if err := json.Unmarshal(mm.publishedMessages[0].msg, parsed); err != nil {
+		t.Errorf("error unmarshalling sent message: %s", err)
+	}
+	if parsed.EventName != "event" {
+		t.Errorf("event name was %s instead of 'event'", parsed.EventName)
+	}
+	if parsed.ServiceName != "job-status-to-apps-adapter" {
+		t.Errorf("service name was %s instead of 'job-status-to-apps-adapter'", parsed.ServiceName)
+	}
+	if parsed.Message != "message" {
+		t.Errorf("message was %s instead of 'message'", parsed.Message)
+	}
+	host := hostname()
+	if parsed.Host != host {
+		t.Errorf("hostname was %s instead of %s", parsed.Host, host)
+	}
+	if parsed.JobId != update.ExternalID {
+		t.Errorf("job ID was %s instead of %s", parsed.JobId, update.ExternalID)
+	}
+	if parsed.JobState != succeeded {
+		t.Errorf("job state was %s instead of %s", parsed.JobState, succeeded)
+	}
+	if parsed.Timestamp == 0 {
+		t.Error("timestamp was 0")
+	}
+}
+
+func TestHostname(t *testing.T) {
+	h := hostname()
+	if h == "" {
+		t.Error("hostname returned an empty string")
+	}
+}
+
+func TestEventFromUpdate(t *testing.T) {
+	n := time.Now()
+	succeeded := string(messaging.SucceededState)
+	update := &DBJobStatusUpdate{
+		ID:                  "id",
+		Status:              succeeded,
+		ExternalID:          "external-id",
+		Message:             "message",
+		SentFrom:            "sent-from",
+		SentFromHostname:    "sent-from-hostname",
+		SentOn:              0,
+		Propagated:          false,
+		PropagationAttempts: 0,
+		CreatedDate:         n,
+	}
+	event := eventFromUpdate("event", "service", "message", update)
+	if event.EventName != "event" {
+		t.Errorf("event name was %s instead of 'event'", event.EventName)
+	}
+	if event.ServiceName != "service" {
+		t.Errorf("service name was %s instead of 'service'", event.ServiceName)
+	}
+	if event.Message != "message" {
+		t.Errorf("message was %s instead of 'message'", event.Message)
+	}
+	host := hostname()
+	if event.Host != host {
+		t.Errorf("hostname was %s instead of %s", event.Host, host)
+	}
+	if event.JobId != update.ExternalID {
+		t.Errorf("job ID was %s instead of %s", event.JobId, update.ExternalID)
+	}
+	if event.JobState != succeeded {
+		t.Errorf("job state was %s instead of %s", event.JobState, succeeded)
+	}
+	if event.Timestamp == 0 {
+		t.Error("timestamp was 0")
 	}
 }

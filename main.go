@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/cyverse-de/configurate"
+	"github.com/cyverse-de/go-events/jobevents"
 	"github.com/cyverse-de/go-events/ping"
 	"github.com/cyverse-de/logcabin"
 	"github.com/cyverse-de/messaging"
@@ -37,6 +38,15 @@ import (
 
 const pingKey = "events.job-status-to-apps-adapter.ping"
 const pongKey = "events.job-status-to-apps-adapter.pong"
+const eventBase = "events.job-status-to-apps-adapter.%s"
+
+func hostname() string {
+	h, err := os.Hostname()
+	if err != nil {
+		return ""
+	}
+	return h
+}
 
 // JobStatusUpdate contains the data POSTed to the apps service.
 type JobStatusUpdate struct {
@@ -281,6 +291,20 @@ func (p *Propagator) ScanAndPropagate(updates []DBJobStatusUpdate, maxRetries in
 	return nil
 }
 
+// eventFromUpdate creates a *jobevents.JobEvent based on the DBJobStatusUpdate
+// that is passed in.
+func eventFromUpdate(event, service, message string, update *DBJobStatusUpdate) *jobevents.JobEvent {
+	return &jobevents.JobEvent{
+		EventName:   event,
+		ServiceName: service,
+		Message:     message,
+		Host:        hostname(),
+		JobId:       update.ExternalID,
+		JobState:    update.Status,
+		Timestamp:   time.Now().Unix(),
+	}
+}
+
 // Messenger defines an interface for handling AMQP operations. This is the
 // subset of functionality needed by job-status-to-apps-adapter.
 type Messenger interface {
@@ -352,6 +376,17 @@ func (e *EventHandler) Ping(delivery amqp.Delivery) {
 	if err = e.client.Publish(pongKey, out); err != nil {
 		logcabin.Error.Print(err)
 	}
+}
+
+// Send emits an event over AMQP.
+func (e *EventHandler) Send(event, message string, update *DBJobStatusUpdate) error {
+	ev := eventFromUpdate(event, "job-status-to-apps-adapter", message, update)
+	j, err := json.Marshal(ev)
+	if err != nil {
+		return err
+	}
+	eventKey := fmt.Sprintf(eventBase, event)
+	return e.client.Publish(eventKey, j)
 }
 
 func main() {
