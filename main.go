@@ -494,24 +494,27 @@ func main() {
 			logcabin.Error.Fatal(err)
 		}
 
-		for _, jobExtID := range unpropped {
-			proper, err := NewPropagator(db, appsURI, eventer.Emit)
-			if err != nil {
-				logcabin.Error.Fatal(err)
-			}
+		for i := range unpropped {
+			go func(idx int) {
+				jobExtID := unpropped[idx]
+				proper, err := NewPropagator(db, appsURI, eventer.Emit)
+				if err != nil {
+					logcabin.Error.Fatal(err)
+				}
 
-			updates, err := proper.JobUpdates(jobExtID, *maxRetries)
-			if err != nil {
-				logcabin.Error.Fatal(err)
-			}
+				updates, err := proper.JobUpdates(jobExtID, *maxRetries)
+				if err != nil {
+					logcabin.Error.Fatal(err)
+				}
 
-			if err = proper.ScanAndPropagate(updates, *maxRetries); err != nil {
-				logcabin.Error.Fatal(err)
-			}
+				if err = proper.ScanAndPropagate(updates, *maxRetries); err != nil {
+					logcabin.Error.Fatal(err)
+				}
 
-			if err = proper.Finished(); err != nil {
-				logcabin.Error.Print(err)
-			}
+				if err = proper.Finished(); err != nil {
+					logcabin.Error.Print(err)
+				}
+			}(i)
 		}
 
 		time.Sleep(5 * time.Second)
