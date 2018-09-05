@@ -23,6 +23,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/cyverse-de/configurate"
@@ -410,6 +411,7 @@ func main() {
 		maxRetries       = flag.Int64("retries", 3, "The maximum number of propagation retries to make")
 		eventsQueue      = flag.String("events-queue", "job_status_to_apps_adapter_events", "The AMQP queue name for job-status-to-apps-adapter events")
 		eventsRoutingKey = flag.String("events-key", "events.job-status-to-apps-adapter.*", "The routing key to use to listen for events")
+		batchSize        = flag.Int("batch-size", 1000, "The number of concurrent jobs to process.")
 		err              error
 		cfg              *viper.Viper
 		db               *sql.DB
@@ -489,31 +491,47 @@ func main() {
 	}()
 
 	for {
+		var batches [][]string
+		var wg sync.WaitGroup
+
 		unpropped, err := Unpropagated(db, *maxRetries)
 		if err != nil {
 			logcabin.Error.Fatal(err)
 		}
 
-		for _, jobExtID := range unpropped {
-			proper, err := NewPropagator(db, appsURI, eventer.Emit)
-			if err != nil {
-				logcabin.Error.Fatal(err)
-			}
-
-			updates, err := proper.JobUpdates(jobExtID, *maxRetries)
-			if err != nil {
-				logcabin.Error.Fatal(err)
-			}
-
-			if err = proper.ScanAndPropagate(updates, *maxRetries); err != nil {
-				logcabin.Error.Fatal(err)
-			}
-
-			if err = proper.Finished(); err != nil {
-				logcabin.Error.Print(err)
-			}
+		for *batchSize < len(unpropped) {
+			unpropped, batches = unpropped[*batchSize:], append(batches, unpropped[0:*batchSize])
 		}
+		batches = append(batches, unpropped)
 
-		time.Sleep(5 * time.Second)
+		for _, batch := range batches {
+			for _, jobExtID := range batch {
+				wg.Add(1)
+
+				go func(db *sql.DB, maxRetries int64, appsURI string, jobExtID string) {
+					defer wg.Done()
+
+					proper, err := NewPropagator(db, appsURI, eventer.Emit)
+					if err != nil {
+						logcabin.Error.Print(err)
+					}
+
+					updates, err := proper.JobUpdates(jobExtID, maxRetries)
+					if err != nil {
+						logcabin.Error.Print(err)
+					}
+
+					if err = proper.ScanAndPropagate(updates, maxRetries); err != nil {
+						logcabin.Error.Print(err)
+					}
+
+					if err = proper.Finished(); err != nil {
+						logcabin.Error.Print(err)
+					}
+				}(db, *maxRetries, appsURI, jobExtID)
+			}
+
+			wg.Wait()
+		}
 	}
 }
