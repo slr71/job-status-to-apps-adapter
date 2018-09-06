@@ -247,18 +247,6 @@ func (p *Propagator) MarkPropagated(id string) error {
 	return nil
 }
 
-// LastPropagated returns the index in the list of []DBJobStatusUpdates that
-// contains the last update that is marked as propagated in the database.
-func LastPropagated(updates []DBJobStatusUpdate) int {
-	lastID := 0
-	for idx, update := range updates {
-		if update.Propagated {
-			lastID = idx
-		}
-	}
-	return lastID
-}
-
 // StorePropagationAttempts stores an incremented value for the update's
 // propagation_attempts field.
 func (p *Propagator) StorePropagationAttempts(update *DBJobStatusUpdate) error {

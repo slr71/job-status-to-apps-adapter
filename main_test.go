@@ -277,50 +277,6 @@ func TestMarkPropagated(t *testing.T) {
 	}
 }
 
-func TestLastPropagated(t *testing.T) {
-	n := time.Now()
-	updates := []DBJobStatusUpdate{
-		{
-			Status:              string(messaging.SucceededState),
-			ExternalID:          "external-id",
-			Message:             "message",
-			SentFrom:            "sent-from",
-			SentFromHostname:    "sent-from-hostname",
-			SentOn:              0,
-			Propagated:          true,
-			PropagationAttempts: 0,
-			CreatedDate:         n,
-		},
-		{
-			Status:              string(messaging.SucceededState),
-			ExternalID:          "external-id1",
-			Message:             "message",
-			SentFrom:            "sent-from",
-			SentFromHostname:    "sent-from-hostname",
-			SentOn:              1,
-			Propagated:          true,
-			PropagationAttempts: 0,
-			CreatedDate:         n,
-		},
-		{
-			Status:              string(messaging.SucceededState),
-			ExternalID:          "external-id2",
-			Message:             "message",
-			SentFrom:            "sent-from",
-			SentFromHostname:    "sent-from-hostname",
-			SentOn:              2,
-			Propagated:          true,
-			PropagationAttempts: 0,
-			CreatedDate:         n,
-		},
-	}
-
-	l := LastPropagated(updates)
-	if l != 2 {
-		t.Errorf("index of last propagated update was %d instead of 2", l)
-	}
-}
-
 type AnyInt64 struct{}
 
 func (a AnyInt64) Match(v driver.Value) bool {
