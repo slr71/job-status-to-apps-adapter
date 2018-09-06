@@ -1,7 +1,6 @@
 package main
 
 import (
-	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,11 +8,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
 	"github.com/cyverse-de/configurate"
-	"github.com/cyverse-de/go-events/jobevents"
 	"github.com/cyverse-de/go-events/ping"
 	"github.com/spf13/viper"
 	"github.com/streadway/amqp"
@@ -63,12 +60,7 @@ func TestNewPropagator(t *testing.T) {
 	}
 	defer db.Close()
 
-	emitted := false
-
-	p, err := NewPropagator(db, "uri", func(event, message string, update *DBJobStatusUpdate) error {
-		emitted = true
-		return nil
-	})
+	p, err := NewPropagator(db, "uri")
 	if err != nil {
 		t.Errorf("error calling NewPropagator(): %s", err)
 	}
@@ -83,10 +75,6 @@ func TestNewPropagator(t *testing.T) {
 
 	if p.appsURI != "uri" {
 		t.Errorf("appsURI was %s rather than 'uri'", p.appsURI)
-	}
-	p.emit("event", "message", nil)
-	if !emitted {
-		t.Error("emitted was false")
 	}
 }
 
@@ -107,9 +95,7 @@ func TestPropagate(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p, err := NewPropagator(db, server.URL, func(event, message string, update *DBJobStatusUpdate) error {
-		return nil
-	})
+	p, err := NewPropagator(db, server.URL)
 	if err != nil {
 		t.Errorf("error calling NewPropagator(): %s", err)
 	}
@@ -118,17 +104,8 @@ func TestPropagate(t *testing.T) {
 		t.Errorf("unfulfilled expectations from NewPropagator()")
 	}
 
-	n := time.Now()
 	status := &DBJobStatusUpdate{
-		Status:              string(messaging.SucceededState),
-		ExternalID:          "external-id",
-		Message:             "message",
-		SentFrom:            "sent-from",
-		SentFromHostname:    "sent-from-hostname",
-		SentOn:              0,
-		Propagated:          false,
-		PropagationAttempts: 0,
-		CreatedDate:         n,
+		ExternalID: "external-id",
 	}
 
 	err = p.Propagate(status)
@@ -136,17 +113,13 @@ func TestPropagate(t *testing.T) {
 		t.Errorf("error from Propagate(): %s", err)
 	}
 
-	actual := &JobStatusUpdateWrapper{}
+	actual := &JobStatusUpdate{}
 	if err = json.Unmarshal(body, actual); err != nil {
 		t.Errorf("error unmarshalling body: %s", err)
 	}
 
-	if actual.State.Status != status.Status {
-		t.Errorf("status was %s instead of %s", actual.State.Status, status.Status)
-	}
-
-	if actual.State.UUID != status.ExternalID {
-		t.Errorf("uuid field was %s instead of %s", actual.State.UUID, status.ExternalID)
+	if actual.UUID != status.ExternalID {
+		t.Errorf("uuid field was %s instead of %s", actual.UUID, status.ExternalID)
 	}
 }
 
@@ -157,40 +130,16 @@ func TestJobUpdates(t *testing.T) {
 	}
 	defer db.Close()
 
-	now := time.Now()
-
 	rows := sqlmock.NewRows([]string{
-		"id",
 		"external_id",
-		"message",
-		"status",
-		"sent_from",
-		"sent_from_hostname",
-		"sent_on",
-		"propagated",
-		"propagation_attempts",
-		"last_propagation_attempt",
-		"created_date",
 	}).AddRow(
-		"id",
 		"external-id",
-		"message",
-		"status",
-		"sent-from",
-		"sent-from-hostname",
-		0,
-		false,
-		0,
-		nil,
-		now,
 	)
-	mock.ExpectQuery("select id").
+	mock.ExpectQuery("select distinct external_id").
 		WithArgs("external-id", 1).
 		WillReturnRows(rows)
 
-	p, err := NewPropagator(db, "uri", func(event, message string, update *DBJobStatusUpdate) error {
-		return nil
-	})
+	p, err := NewPropagator(db, "uri")
 	if err != nil {
 		t.Errorf("error calling NewPropagator(): %s", err)
 	}
@@ -208,135 +157,15 @@ func TestJobUpdates(t *testing.T) {
 		t.Errorf("unfulfilled expectations from JobUpdates()")
 	}
 
-	if updates[0].ID != "id" {
-		t.Errorf("id was %s instead of 'id'", updates[0].ID)
-	}
-
 	if updates[0].ExternalID != "external-id" {
 		t.Errorf("id was %s instead of 'external-id'", updates[0].ExternalID)
-	}
-
-	if updates[0].Message != "message" {
-		t.Errorf("message was %s instead of 'message'", updates[0].Message)
-	}
-
-	if updates[0].Status != "status" {
-		t.Errorf("status was %s instead of 'status'", updates[0].Status)
-	}
-
-	if updates[0].SentFrom != "sent-from" {
-		t.Errorf("sent from was %s instead of 'sent-from'", updates[0].SentFrom)
-	}
-
-	if updates[0].SentFromHostname != "sent-from-hostname" {
-		t.Errorf("sent from hostname was %s instead of 'sent-from-hostname'", updates[0].SentFromHostname)
-	}
-
-	if updates[0].SentOn != 0 {
-		t.Errorf("sent on was %d intead of 0", updates[0].SentOn)
-	}
-
-	if updates[0].Propagated {
-		t.Error("propagated was true")
-	}
-
-	if updates[0].PropagationAttempts != 0 {
-		t.Errorf("propagation attempts was %d instead of 0", updates[0].PropagationAttempts)
-	}
-
-	if updates[0].CreatedDate != now {
-		t.Errorf("created date was set to %#v instead of %#v", updates[0].CreatedDate, now)
-	}
-}
-
-func TestMarkPropagated(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatalf("an error occurred creating the mock db: %s", err)
-	}
-	defer db.Close()
-
-	mock.ExpectBegin()
-	mock.ExpectExec("UPDATE ONLY job_status_updates").
-		WithArgs("1").
-		WillReturnResult(sqlmock.NewResult(1, 1))
-
-	p, err := NewPropagator(db, "uri", func(event, message string, update *DBJobStatusUpdate) error {
-		return nil
-	})
-	if err != nil {
-		t.Errorf("error calling NewPropagator(): %s", err)
-	}
-
-	if err = p.MarkPropagated("1"); err != nil {
-		t.Errorf("error calling MarkPropagated(): %s", err)
-	}
-
-	if err = mock.ExpectationsWereMet(); err != nil {
-		t.Errorf("unfulfilled expectations from MarkPropagated()")
-	}
-}
-
-type AnyInt64 struct{}
-
-func (a AnyInt64) Match(v driver.Value) bool {
-	_, ok := v.(int64)
-	return ok
-}
-
-func TestStorePropagationAttempts(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatalf("an error occurred creating the mock db: %s", err)
-	}
-	defer db.Close()
-
-	n := time.Now()
-
-	mock.ExpectBegin()
-	mock.ExpectExec("UPDATE ONLY job_status_updates").
-		WithArgs("id", 0, AnyInt64{}).
-		WillReturnResult(sqlmock.NewResult(1, 1))
-
-	update := &DBJobStatusUpdate{
-		ID:                  "id",
-		Status:              string(messaging.SucceededState),
-		ExternalID:          "external-id",
-		Message:             "message",
-		SentFrom:            "sent-from",
-		SentFromHostname:    "sent-from-hostname",
-		SentOn:              0,
-		Propagated:          true,
-		PropagationAttempts: 0,
-		CreatedDate:         n,
-	}
-
-	p, err := NewPropagator(db, "uri", func(event, message string, update *DBJobStatusUpdate) error {
-		return nil
-	})
-	if err != nil {
-		t.Errorf("error calling NewPropagator(): %s", err)
-	}
-
-	if err = p.StorePropagationAttempts(update); err != nil {
-		t.Errorf("error from StorePropagationAttempts(): %s", err)
 	}
 }
 
 func TestScanAndPropagate(t *testing.T) {
-	n := time.Now()
 	updates := []DBJobStatusUpdate{
 		{
-			ID:                  "id",
-			Status:              string(messaging.SucceededState),
-			ExternalID:          "external-id",
-			Message:             "message",
-			SentFrom:            "sent-from",
-			SentFromHostname:    "sent-from-hostname",
-			SentOn:              0,
-			Propagated:          false,
-			PropagationAttempts: 0,
-			CreatedDate:         n,
+			ExternalID: "external-id",
 		},
 	}
 
@@ -358,9 +187,7 @@ func TestScanAndPropagate(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p, err := NewPropagator(db, server.URL, func(event, message string, update *DBJobStatusUpdate) error {
-		return nil
-	})
+	p, err := NewPropagator(db, server.URL)
 	if err != nil {
 		t.Errorf("error calling NewPropagator(): %s", err)
 	}
@@ -369,34 +196,20 @@ func TestScanAndPropagate(t *testing.T) {
 		t.Errorf("error from ScanAndPropagate(): %s", err)
 	}
 
-	actual := &JobStatusUpdateWrapper{}
+	actual := &JobStatusUpdate{}
 	if err = json.Unmarshal(body, actual); err != nil {
 		t.Errorf("error unmarshalling body: %s", err)
 	}
 
-	if actual.State.Status != updates[0].Status {
-		t.Errorf("status was %s instead of %s", actual.State.Status, updates[0].Status)
-	}
-
-	if actual.State.UUID != updates[0].ExternalID {
-		t.Errorf("uuid field was %s instead of %s", actual.State.UUID, updates[0].ExternalID)
+	if actual.UUID != updates[0].ExternalID {
+		t.Errorf("uuid field was %s instead of %s", actual.UUID, updates[0].ExternalID)
 	}
 }
 
 func TestScanAndPropagateWithServerError(t *testing.T) {
-	n := time.Now()
 	updates := []DBJobStatusUpdate{
 		{
-			ID:                  "id",
-			Status:              string(messaging.SucceededState),
-			ExternalID:          "external-id",
-			Message:             "message",
-			SentFrom:            "sent-from",
-			SentFromHostname:    "sent-from-hostname",
-			SentOn:              0,
-			Propagated:          false,
-			PropagationAttempts: 0,
-			CreatedDate:         n,
+			ExternalID: "external-id",
 		},
 	}
 
@@ -406,14 +219,7 @@ func TestScanAndPropagateWithServerError(t *testing.T) {
 	}
 	defer db.Close()
 
-	mock.ExpectBegin()
-	mock.ExpectExec("UPDATE ONLY job_status_updates").
-		WithArgs("id", 1, AnyInt64{}).
-		WillReturnResult(sqlmock.NewResult(1, 1))
-
-	p, err := NewPropagator(db, "uri", func(event, message string, update *DBJobStatusUpdate) error {
-		return nil
-	})
+	p, err := NewPropagator(db, "uri")
 	if err != nil {
 		t.Errorf("error calling NewPropagator(): %s", err)
 	}
@@ -608,115 +414,5 @@ func TestRouteUnknown(t *testing.T) {
 	numMessages := len(mm.publishedMessages)
 	if numMessages != 0 {
 		t.Errorf("numMessages was %d instead of 0", numMessages)
-	}
-}
-
-func TestEmit(t *testing.T) {
-	n := time.Now()
-	succeeded := string(messaging.SucceededState)
-	update := &DBJobStatusUpdate{
-		ID:                  "id",
-		Status:              succeeded,
-		ExternalID:          "external-id",
-		Message:             "message",
-		SentFrom:            "sent-from",
-		SentFromHostname:    "sent-from-hostname",
-		SentOn:              0,
-		Propagated:          false,
-		PropagationAttempts: 0,
-		CreatedDate:         n,
-	}
-	client := &MockMessenger{
-		publishedMessages: make([]MockMessage, 0),
-	}
-	handler := NewEventHandler(client, "exchange", "exchange-type", "queue-name", "listen-key")
-	if handler == nil {
-		t.Error("handler was nil")
-	}
-	if err := handler.Emit("event", "message", update); err != nil {
-		t.Errorf("error sending event: %s", err)
-	}
-	mm := handler.client.(*MockMessenger)
-	numMessages := len(mm.publishedMessages)
-	if numMessages != 1 {
-		t.Errorf("numMessages was %d instead of 1", numMessages)
-	}
-	key := mm.publishedMessages[0].key
-	expectedKey := fmt.Sprintf(eventBase, "event")
-	if key != expectedKey {
-		t.Errorf("message key was %s instead of %s", key, expectedKey)
-	}
-	parsed := &jobevents.JobEvent{}
-	if err := json.Unmarshal(mm.publishedMessages[0].msg, parsed); err != nil {
-		t.Errorf("error unmarshalling sent message: %s", err)
-	}
-	if parsed.EventName != "event" {
-		t.Errorf("event name was %s instead of 'event'", parsed.EventName)
-	}
-	if parsed.ServiceName != "job-status-to-apps-adapter" {
-		t.Errorf("service name was %s instead of 'job-status-to-apps-adapter'", parsed.ServiceName)
-	}
-	if parsed.Message != "message" {
-		t.Errorf("message was %s instead of 'message'", parsed.Message)
-	}
-	host := hostname()
-	if parsed.Host != host {
-		t.Errorf("hostname was %s instead of %s", parsed.Host, host)
-	}
-	if parsed.JobId != update.ExternalID {
-		t.Errorf("job ID was %s instead of %s", parsed.JobId, update.ExternalID)
-	}
-	if parsed.JobState != succeeded {
-		t.Errorf("job state was %s instead of %s", parsed.JobState, succeeded)
-	}
-	if parsed.Timestamp == 0 {
-		t.Error("timestamp was 0")
-	}
-}
-
-func TestHostname(t *testing.T) {
-	h := hostname()
-	if h == "" {
-		t.Error("hostname returned an empty string")
-	}
-}
-
-func TestEventFromUpdate(t *testing.T) {
-	n := time.Now()
-	succeeded := string(messaging.SucceededState)
-	update := &DBJobStatusUpdate{
-		ID:                  "id",
-		Status:              succeeded,
-		ExternalID:          "external-id",
-		Message:             "message",
-		SentFrom:            "sent-from",
-		SentFromHostname:    "sent-from-hostname",
-		SentOn:              0,
-		Propagated:          false,
-		PropagationAttempts: 0,
-		CreatedDate:         n,
-	}
-	event := eventFromUpdate("event", "service", "message", update)
-	if event.EventName != "event" {
-		t.Errorf("event name was %s instead of 'event'", event.EventName)
-	}
-	if event.ServiceName != "service" {
-		t.Errorf("service name was %s instead of 'service'", event.ServiceName)
-	}
-	if event.Message != "message" {
-		t.Errorf("message was %s instead of 'message'", event.Message)
-	}
-	host := hostname()
-	if event.Host != host {
-		t.Errorf("hostname was %s instead of %s", event.Host, host)
-	}
-	if event.JobId != update.ExternalID {
-		t.Errorf("job ID was %s instead of %s", event.JobId, update.ExternalID)
-	}
-	if event.JobState != succeeded {
-		t.Errorf("job state was %s instead of %s", event.JobState, succeeded)
-	}
-	if event.Timestamp == 0 {
-		t.Error("timestamp was 0")
 	}
 }
