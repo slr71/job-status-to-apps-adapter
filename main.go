@@ -24,10 +24,8 @@ import (
 	"net/http"
 	"os"
 	"sync"
-	"time"
 
 	"github.com/cyverse-de/configurate"
-	"github.com/cyverse-de/go-events/jobevents"
 	"github.com/cyverse-de/go-events/ping"
 	"github.com/cyverse-de/logcabin"
 	"github.com/cyverse-de/version"
@@ -39,44 +37,16 @@ import (
 
 const pingKey = "events.job-status-to-apps-adapter.ping"
 const pongKey = "events.job-status-to-apps-adapter.pong"
-const eventBase = "events.job-status-to-apps-adapter.%s"
-
-func hostname() string {
-	h, err := os.Hostname()
-	if err != nil {
-		return ""
-	}
-	return h
-}
-
-// EventEmitter is a function that should send an event to the AMQP broker.
-type EventEmitter func(event, service string, update *DBJobStatusUpdate) error
 
 // JobStatusUpdate contains the data POSTed to the apps service.
 type JobStatusUpdate struct {
-	Status         string `json:"status"`
-	CompletionDate string `json:"completion_date,omitempty"`
-	UUID           string `json:"uuid"`
-}
-
-// JobStatusUpdateWrapper wraps a JobStatusUpdate
-type JobStatusUpdateWrapper struct {
-	State JobStatusUpdate `json:"state"`
+	UUID string `json:"uuid"`
 }
 
 // DBJobStatusUpdate represents a row from the job_status_updates table
 type DBJobStatusUpdate struct {
-	ID                     string
-	ExternalID             string
-	Message                string
-	Status                 string
-	SentFrom               string
-	SentFromHostname       string
-	SentOn                 int64
-	Propagated             bool
-	PropagationAttempts    int64
-	LastPropagationAttempt sql.NullInt64
-	CreatedDate            time.Time
+	ID         string
+	ExternalID string
 }
 
 // Unpropagated returns a []string of the UUIDs for jobs that have steps that
@@ -109,13 +79,12 @@ func Unpropagated(d *sql.DB, maxRetries int64) ([]string, error) {
 // the apps service if they haven't been successfully pushed there yet.
 type Propagator struct {
 	db      *sql.DB
-	emit    EventEmitter
 	appsURI string
 }
 
 // NewPropagator returns a *Propagator that has been initialized with a new
 // transaction.
-func NewPropagator(d *sql.DB, appsURI string, emit EventEmitter) (*Propagator, error) {
+func NewPropagator(d *sql.DB, appsURI string) (*Propagator, error) {
 	var err error
 	if err != nil {
 		return nil, err
@@ -123,27 +92,17 @@ func NewPropagator(d *sql.DB, appsURI string, emit EventEmitter) (*Propagator, e
 	return &Propagator{
 		db:      d,
 		appsURI: appsURI,
-		emit:    emit,
 	}, nil
 }
 
 // Propagate pushes the update to the apps service.
 func (p *Propagator) Propagate(status *DBJobStatusUpdate) error {
 	jsu := JobStatusUpdate{
-		Status: status.Status,
-		UUID:   status.ExternalID,
+		UUID: status.ExternalID,
 	}
 
-	if jsu.Status == string(messaging.SucceededState) || jsu.Status == string(messaging.FailedState) {
-		jsu.CompletionDate = fmt.Sprintf("%d", time.Now().UnixNano()/int64(time.Millisecond))
-	}
-
-	jsuw := JobStatusUpdateWrapper{
-		State: jsu,
-	}
-
-	logcabin.Info.Printf("Job status in the propagate function for job %s is: %#v", jsu.UUID, jsuw)
-	msg, err := json.Marshal(jsuw)
+	logcabin.Info.Printf("Job status in the propagate function for job %s is: %#v", jsu.UUID, jsu)
+	msg, err := json.Marshal(jsu)
 	if err != nil {
 		logcabin.Error.Print(err)
 		return err
@@ -160,21 +119,13 @@ func (p *Propagator) Propagate(status *DBJobStatusUpdate) error {
 	logcabin.Info.Printf("Sending job status to %s in the propagate function for job %s", p.appsURI, jsu.UUID)
 	resp, err := http.Post(p.appsURI, "application/json", buf)
 	if err != nil {
-		p.emit("propagate-failed", fmt.Sprintf("error propagating job %s: %s", status.ExternalID, err), status)
 		logcabin.Error.Printf("Error sending job status to %s in the propagate function for job %s: %#v", p.appsURI, jsu.UUID, err)
 		return err
 	}
 	defer resp.Body.Close()
 
-	p.emit("propagate", fmt.Sprintf("sent job %s to apps", status.ExternalID), status)
-
 	logcabin.Info.Printf("Response from %s in the propagate function for job %s is: %s", p.appsURI, jsu.UUID, resp.Status)
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		p.emit(
-			"propagate-failed",
-			fmt.Sprintf("error propagating job %s: HTTP status code %d from apps", status.ExternalID, resp.StatusCode),
-			status,
-		)
 		return errors.New("bad response")
 	}
 
@@ -185,20 +136,11 @@ func (p *Propagator) Propagate(status *DBJobStatusUpdate) error {
 // retries, sorted by their SentOn field.
 func (p *Propagator) JobUpdates(extID string, maxRetries int64) ([]DBJobStatusUpdate, error) {
 	queryStr := `
-	select id,
-				 external_id,
-				 message,
-				 status,
-				 sent_from,
-				 sent_from_hostname,
-				 sent_on,
-				 propagated,
-				 propagation_attempts,
-				 last_propagation_attempt,
-				 created_date
+	select distinct id, external_id
 	  from job_status_updates
 	 where external_id = $1
 	   and propagation_attempts < $2
+		 and propagated = false
 	order by sent_on asc`
 	rows, err := p.db.Query(queryStr, extID, maxRetries)
 	if err != nil {
@@ -208,19 +150,7 @@ func (p *Propagator) JobUpdates(extID string, maxRetries int64) ([]DBJobStatusUp
 	var retval []DBJobStatusUpdate
 	for rows.Next() {
 		r := DBJobStatusUpdate{}
-		err = rows.Scan(
-			&r.ID,
-			&r.ExternalID,
-			&r.Message,
-			&r.Status,
-			&r.SentFrom,
-			&r.SentFromHostname,
-			&r.SentOn,
-			&r.Propagated,
-			&r.PropagationAttempts,
-			&r.LastPropagationAttempt,
-			&r.CreatedDate,
-		)
+		err = rows.Scan(&r.ID, &r.ExternalID)
 		if err != nil {
 			return nil, err
 		}
@@ -246,62 +176,18 @@ func (p *Propagator) MarkPropagated(id string) error {
 	return nil
 }
 
-// StorePropagationAttempts stores an incremented value for the update's
-// propagation_attempts field.
-func (p *Propagator) StorePropagationAttempts(update *DBJobStatusUpdate) error {
-	newVal := update.PropagationAttempts
-	id := update.ID
-	lastAttemptTime := time.Now().UnixNano() / int64(time.Millisecond)
-	insertStr := `UPDATE ONLY job_status_updates SET propagation_attempts = $2, last_propagation_attempt = $3 WHERE id = $1`
-	tx, err := p.db.Begin()
-	if err != nil {
-		return err
-	}
-	if _, err = tx.Exec(insertStr, id, newVal, lastAttemptTime); err != nil {
-		tx.Rollback()
-		return err
-	}
-	tx.Commit()
-	return nil
-}
-
 // ScanAndPropagate marks any unpropagated updates that appear __before__ a
 // propagated update as propagated.
 func (p *Propagator) ScanAndPropagate(updates []DBJobStatusUpdate, maxRetries int64) error {
 	var err error
 	for _, subupdates := range updates {
-		if !subupdates.Propagated && subupdates.PropagationAttempts < maxRetries {
-			logcabin.Info.Printf("Propagating %#v", subupdates)
-			if err = p.Propagate(&subupdates); err != nil {
-				logcabin.Error.Print(err)
-				subupdates.PropagationAttempts = subupdates.PropagationAttempts + 1
-				if err = p.StorePropagationAttempts(&subupdates); err != nil {
-					logcabin.Error.Print(err)
-				}
-				continue
-			}
-			logcabin.Info.Printf("Marking update %s as propagated", subupdates.ID)
-			if err = p.MarkPropagated(subupdates.ID); err != nil {
-				logcabin.Error.Print(err)
-				continue
-			}
+		logcabin.Info.Printf("Propagating %#v", subupdates)
+		if err = p.Propagate(&subupdates); err != nil {
+			logcabin.Error.Print(err)
+			continue
 		}
 	}
 	return nil
-}
-
-// eventFromUpdate creates a *jobevents.JobEvent based on the DBJobStatusUpdate
-// that is passed in.
-func eventFromUpdate(event, service, message string, update *DBJobStatusUpdate) *jobevents.JobEvent {
-	return &jobevents.JobEvent{
-		EventName:   event,
-		ServiceName: service,
-		Message:     message,
-		Host:        hostname(),
-		JobId:       update.ExternalID,
-		JobState:    update.Status,
-		Timestamp:   time.Now().Unix(),
-	}
 }
 
 // Messenger defines an interface for handling AMQP operations. This is the
@@ -375,17 +261,6 @@ func (e *EventHandler) Ping(delivery amqp.Delivery) {
 	if err = e.client.Publish(pongKey, out); err != nil {
 		logcabin.Error.Print(err)
 	}
-}
-
-// Emit emits an event over AMQP.
-func (e *EventHandler) Emit(event, message string, update *DBJobStatusUpdate) error {
-	ev := eventFromUpdate(event, "job-status-to-apps-adapter", message, update)
-	j, err := json.Marshal(ev)
-	if err != nil {
-		return err
-	}
-	eventKey := fmt.Sprintf(eventBase, event)
-	return e.client.Publish(eventKey, j)
 }
 
 func main() {
@@ -496,7 +371,7 @@ func main() {
 				go func(db *sql.DB, maxRetries int64, appsURI string, jobExtID string) {
 					defer wg.Done()
 
-					proper, err := NewPropagator(db, appsURI, eventer.Emit)
+					proper, err := NewPropagator(db, appsURI)
 					if err != nil {
 						logcabin.Error.Print(err)
 					}
