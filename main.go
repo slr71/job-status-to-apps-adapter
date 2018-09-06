@@ -235,7 +235,6 @@ func (p *Propagator) JobUpdates(extID string, maxRetries int64) ([]DBJobStatusUp
 func (p *Propagator) MarkPropagated(id string) error {
 	tx, err := p.db.Begin()
 	if err != nil {
-		tx.Rollback()
 		return err
 	}
 	updateStr := `UPDATE ONLY job_status_updates SET propagated = 'true' where id = $1`
@@ -256,7 +255,6 @@ func (p *Propagator) StorePropagationAttempts(update *DBJobStatusUpdate) error {
 	insertStr := `UPDATE ONLY job_status_updates SET propagation_attempts = $2, last_propagation_attempt = $3 WHERE id = $1`
 	tx, err := p.db.Begin()
 	if err != nil {
-		tx.Rollback()
 		return err
 	}
 	if _, err = tx.Exec(insertStr, id, newVal, lastAttemptTime); err != nil {
