@@ -265,10 +265,7 @@ func (p *Propagator) StorePropagationAttempts(update *DBJobStatusUpdate) error {
 	newVal := update.PropagationAttempts
 	id := update.ID
 	lastAttemptTime := time.Now().UnixNano() / int64(time.Millisecond)
-	insertStr := `UPDATE ONLY job_status_updates
-												SET propagation_attempts = $2,
-														last_propagation_attempt = $3
-											WHERE id = $1`
+	insertStr := `UPDATE ONLY job_status_updates SET propagation_attempts = $2, last_propagation_attempt = $3 WHERE id = $1`
 	tx, err := p.db.Begin()
 	if err != nil {
 		tx.Rollback()
