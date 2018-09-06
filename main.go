@@ -108,34 +108,23 @@ func Unpropagated(d *sql.DB, maxRetries int64) ([]string, error) {
 // Propagator looks for job status updates in the database and pushes them to
 // the apps service if they haven't been successfully pushed there yet.
 type Propagator struct {
-	db       *sql.DB
-	tx       *sql.Tx
-	emit     EventEmitter
-	rollback bool
-	appsURI  string
+	db      *sql.DB
+	emit    EventEmitter
+	appsURI string
 }
 
 // NewPropagator returns a *Propagator that has been initialized with a new
 // transaction.
 func NewPropagator(d *sql.DB, appsURI string, emit EventEmitter) (*Propagator, error) {
-	t, err := d.Begin()
+	var err error
 	if err != nil {
 		return nil, err
 	}
 	return &Propagator{
 		db:      d,
-		tx:      t,
 		appsURI: appsURI,
 		emit:    emit,
 	}, nil
-}
-
-// Finished commits the transaction held by the *Propagator.
-func (p *Propagator) Finished() error {
-	if p.rollback {
-		return p.tx.Rollback()
-	}
-	return p.tx.Commit()
 }
 
 // Propagate pushes the update to the apps service.
@@ -211,9 +200,8 @@ func (p *Propagator) JobUpdates(extID string, maxRetries int64) ([]DBJobStatusUp
 	 where external_id = $1
 	   and propagation_attempts < $2
 	order by sent_on asc`
-	rows, err := p.tx.Query(queryStr, extID, maxRetries)
+	rows, err := p.db.Query(queryStr, extID, maxRetries)
 	if err != nil {
-		p.rollback = true
 		return nil, err
 	}
 	defer rows.Close()
@@ -234,24 +222,29 @@ func (p *Propagator) JobUpdates(extID string, maxRetries int64) ([]DBJobStatusUp
 			&r.CreatedDate,
 		)
 		if err != nil {
-			p.rollback = true
 			return nil, err
 		}
 		retval = append(retval, r)
 	}
 	err = rows.Err()
-	if err != nil {
-		p.rollback = true
-	}
 	return retval, err
 }
 
 // MarkPropagated marks the job as propagated in the database as part of the
 // transaction tracked by the *Propagator.
 func (p *Propagator) MarkPropagated(id string) error {
+	tx, err := p.db.Begin()
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
 	updateStr := `UPDATE ONLY job_status_updates SET propagated = 'true' where id = $1`
-	_, err := p.tx.Exec(updateStr, id)
-	return err
+	if _, err = tx.Exec(updateStr, id); err != nil {
+		tx.Rollback()
+		return err
+	}
+	tx.Commit()
+	return nil
 }
 
 // LastPropagated returns the index in the list of []DBJobStatusUpdates that
@@ -273,11 +266,20 @@ func (p *Propagator) StorePropagationAttempts(update *DBJobStatusUpdate) error {
 	id := update.ID
 	lastAttemptTime := time.Now().UnixNano() / int64(time.Millisecond)
 	insertStr := `UPDATE ONLY job_status_updates
-		         SET propagation_attempts = $2,
-		             last_propagation_attempt = $3
-		       WHERE id = $1`
-	_, err := p.tx.Exec(insertStr, id, newVal, lastAttemptTime)
-	return err
+												SET propagation_attempts = $2,
+														last_propagation_attempt = $3
+											WHERE id = $1`
+	tx, err := p.db.Begin()
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+	if _, err = tx.Exec(insertStr, id, newVal, lastAttemptTime); err != nil {
+		tx.Rollback()
+		return err
+	}
+	tx.Commit()
+	return nil
 }
 
 // ScanAndPropagate marks any unpropagated updates that appear __before__ a
@@ -522,10 +524,6 @@ func main() {
 					}
 
 					if err = proper.ScanAndPropagate(updates, maxRetries); err != nil {
-						logcabin.Error.Print(err)
-					}
-
-					if err = proper.Finished(); err != nil {
 						logcabin.Error.Print(err)
 					}
 				}(db, *maxRetries, appsURI, jobExtID)

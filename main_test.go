@@ -63,8 +63,6 @@ func TestNewPropagator(t *testing.T) {
 	}
 	defer db.Close()
 
-	mock.ExpectBegin()
-
 	emitted := false
 
 	p, err := NewPropagator(db, "uri", func(event, message string, update *DBJobStatusUpdate) error {
@@ -83,71 +81,12 @@ func TestNewPropagator(t *testing.T) {
 		t.Error("dbs did not match")
 	}
 
-	if p.tx == nil {
-		t.Error("transaction was nil")
-	}
-
 	if p.appsURI != "uri" {
 		t.Errorf("appsURI was %s rather than 'uri'", p.appsURI)
 	}
 	p.emit("event", "message", nil)
 	if !emitted {
 		t.Error("emitted was false")
-	}
-}
-
-func TestFinished(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatalf("an error occurred creating the mock db: %s", err)
-	}
-	defer db.Close()
-
-	mock.ExpectBegin()
-	mock.ExpectCommit()
-
-	p, err := NewPropagator(db, "uri", func(event, message string, update *DBJobStatusUpdate) error {
-		return nil
-	})
-	if err != nil {
-		t.Errorf("error calling NewPropagator(): %s", err)
-	}
-
-	err = p.Finished()
-	if err != nil {
-		t.Errorf("error calling Finished(): %s", err)
-	}
-
-	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Errorf("unfulfilled expectations in Finished()")
-	}
-}
-
-func TestFinishedWithRollback(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatalf("an error occurred creating the mock db: %s", err)
-	}
-	defer db.Close()
-
-	mock.ExpectBegin()
-	mock.ExpectRollback()
-
-	p, err := NewPropagator(db, "uri", func(event, message string, update *DBJobStatusUpdate) error {
-		return nil
-	})
-	if err != nil {
-		t.Errorf("error calling NewPropagator(): %s", err)
-	}
-	p.rollback = true
-
-	err = p.Finished()
-	if err != nil {
-		t.Errorf("error calling Finished(): %s", err)
-	}
-
-	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Errorf("unfulfilled expectations in Finished()")
 	}
 }
 
@@ -167,8 +106,6 @@ func TestPropagate(t *testing.T) {
 		fmt.Fprintln(w, "Hello")
 	}))
 	defer server.Close()
-
-	mock.ExpectBegin()
 
 	p, err := NewPropagator(db, server.URL, func(event, message string, update *DBJobStatusUpdate) error {
 		return nil
@@ -247,7 +184,6 @@ func TestJobUpdates(t *testing.T) {
 		nil,
 		now,
 	)
-	mock.ExpectBegin()
 	mock.ExpectQuery("select id").
 		WithArgs("external-id", 1).
 		WillReturnRows(rows)
