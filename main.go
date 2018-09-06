@@ -135,12 +135,11 @@ func (p *Propagator) Propagate(status *DBJobStatusUpdate) error {
 // retries, sorted by their SentOn field.
 func (p *Propagator) JobUpdates(extID string, maxRetries int64) ([]DBJobStatusUpdate, error) {
 	queryStr := `
-	select distinct external_id
-	  from job_status_updates
-	 where external_id = $1
-	   and propagation_attempts < $2
-		 and propagated = false
-	order by sent_on asc`
+  select distinct external_id
+    from job_status_updates
+   where external_id = $1
+     and propagation_attempts < $2
+     and propagated = false`
 	rows, err := p.db.Query(queryStr, extID, maxRetries)
 	if err != nil {
 		return nil, err
