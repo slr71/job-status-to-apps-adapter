@@ -45,7 +45,6 @@ type JobStatusUpdate struct {
 
 // DBJobStatusUpdate represents a row from the job_status_updates table
 type DBJobStatusUpdate struct {
-	ID         string
 	ExternalID string
 }
 
@@ -136,7 +135,7 @@ func (p *Propagator) Propagate(status *DBJobStatusUpdate) error {
 // retries, sorted by their SentOn field.
 func (p *Propagator) JobUpdates(extID string, maxRetries int64) ([]DBJobStatusUpdate, error) {
 	queryStr := `
-	select distinct id, external_id
+	select distinct external_id
 	  from job_status_updates
 	 where external_id = $1
 	   and propagation_attempts < $2
@@ -150,7 +149,7 @@ func (p *Propagator) JobUpdates(extID string, maxRetries int64) ([]DBJobStatusUp
 	var retval []DBJobStatusUpdate
 	for rows.Next() {
 		r := DBJobStatusUpdate{}
-		err = rows.Scan(&r.ID, &r.ExternalID)
+		err = rows.Scan(&r.ExternalID)
 		if err != nil {
 			return nil, err
 		}

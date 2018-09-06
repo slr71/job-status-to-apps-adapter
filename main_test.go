@@ -131,13 +131,11 @@ func TestJobUpdates(t *testing.T) {
 	defer db.Close()
 
 	rows := sqlmock.NewRows([]string{
-		"id",
 		"external_id",
 	}).AddRow(
-		"id",
 		"external-id",
 	)
-	mock.ExpectQuery("select distinct id").
+	mock.ExpectQuery("select distinct external_id").
 		WithArgs("external-id", 1).
 		WillReturnRows(rows)
 
@@ -159,10 +157,6 @@ func TestJobUpdates(t *testing.T) {
 		t.Errorf("unfulfilled expectations from JobUpdates()")
 	}
 
-	if updates[0].ID != "id" {
-		t.Errorf("id was %s instead of 'id'", updates[0].ID)
-	}
-
 	if updates[0].ExternalID != "external-id" {
 		t.Errorf("id was %s instead of 'external-id'", updates[0].ExternalID)
 	}
@@ -171,7 +165,6 @@ func TestJobUpdates(t *testing.T) {
 func TestScanAndPropagate(t *testing.T) {
 	updates := []DBJobStatusUpdate{
 		{
-			ID:         "id",
 			ExternalID: "external-id",
 		},
 	}
@@ -216,7 +209,6 @@ func TestScanAndPropagate(t *testing.T) {
 func TestScanAndPropagateWithServerError(t *testing.T) {
 	updates := []DBJobStatusUpdate{
 		{
-			ID:         "id",
 			ExternalID: "external-id",
 		},
 	}
