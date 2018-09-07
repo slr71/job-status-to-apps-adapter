@@ -26,17 +26,11 @@ import (
 	"sync"
 
 	"github.com/cyverse-de/configurate"
-	"github.com/cyverse-de/go-events/ping"
 	"github.com/cyverse-de/logcabin"
 	"github.com/cyverse-de/version"
 	_ "github.com/lib/pq"
 	"github.com/spf13/viper"
-	"github.com/streadway/amqp"
-	"gopkg.in/cyverse-de/messaging.v2"
 )
-
-const pingKey = "events.job-status-to-apps-adapter.ping"
-const pongKey = "events.job-status-to-apps-adapter.pong"
 
 // JobStatusUpdate contains the data POSTed to the apps service.
 type JobStatusUpdate struct {
@@ -188,92 +182,17 @@ func (p *Propagator) ScanAndPropagate(updates []DBJobStatusUpdate, maxRetries in
 	return nil
 }
 
-// Messenger defines an interface for handling AMQP operations. This is the
-// subset of functionality needed by job-status-to-apps-adapter.
-type Messenger interface {
-	AddConsumer(string, string, string, string, messaging.MessageHandler)
-	Close()
-	Listen()
-	Publish(string, []byte) error
-	SetupPublishing(string) error
-}
-
-// EventHandler processes incoming and outgoing event messages.
-type EventHandler struct {
-	client                                       Messenger
-	exchange, exchangeType, queueName, listenKey string
-}
-
-// NewEventHandler returns a newly initialized and configured *EventHandler.
-func NewEventHandler(client Messenger, exchange, exchangeType, queueName, listenKey string) *EventHandler {
-	handler := &EventHandler{
-		client:       client,
-		exchange:     exchange,
-		exchangeType: exchangeType,
-		queueName:    queueName,
-		listenKey:    listenKey,
-	}
-	go handler.client.Listen()
-	return handler
-}
-
-// Init sets up AMQP publishing and adds the Route function as message handler.
-func (e *EventHandler) Init() {
-	e.client.SetupPublishing(e.exchange)
-	e.client.AddConsumer(
-		e.exchange,
-		e.exchangeType,
-		e.queueName,
-		e.listenKey,
-		e.Route,
-	)
-}
-
-// Route delegates the handling of incoming event messages to the appropriate
-// handler.
-func (e *EventHandler) Route(delivery amqp.Delivery) {
-	if err := delivery.Ack(false); err != nil {
-		logcabin.Error.Print(err)
-	}
-
-	switch delivery.RoutingKey {
-	case pingKey:
-		e.Ping(delivery)
-	case pongKey:
-	default:
-		logcabin.Error.Printf("unknown event received with key %s", delivery.RoutingKey)
-	}
-}
-
-// Ping handles incoming ping requests.
-func (e *EventHandler) Ping(delivery amqp.Delivery) {
-	logcabin.Info.Println("Received ping")
-
-	out, err := json.Marshal(&ping.Pong{})
-	if err != nil {
-		logcabin.Error.Print(err)
-	}
-
-	logcabin.Info.Println("Sent pong")
-
-	if err = e.client.Publish(pongKey, out); err != nil {
-		logcabin.Error.Print(err)
-	}
-}
-
 func main() {
 	var (
-		cfgPath          = flag.String("config", "", "Path to the config file. Required.")
-		showVersion      = flag.Bool("version", false, "Print the version information")
-		dbURI            = flag.String("db", "", "The URI used to connect to the database")
-		maxRetries       = flag.Int64("retries", 3, "The maximum number of propagation retries to make")
-		eventsQueue      = flag.String("events-queue", "job_status_to_apps_adapter_events", "The AMQP queue name for job-status-to-apps-adapter events")
-		eventsRoutingKey = flag.String("events-key", "events.job-status-to-apps-adapter.*", "The routing key to use to listen for events")
-		batchSize        = flag.Int("batch-size", 1000, "The number of concurrent jobs to process.")
-		err              error
-		cfg              *viper.Viper
-		db               *sql.DB
-		appsURI          string
+		cfgPath     = flag.String("config", "", "Path to the config file. Required.")
+		showVersion = flag.Bool("version", false, "Print the version information")
+		dbURI       = flag.String("db", "", "The URI used to connect to the database")
+		maxRetries  = flag.Int64("retries", 3, "The maximum number of propagation retries to make")
+		batchSize   = flag.Int("batch-size", 1000, "The number of concurrent jobs to process.")
+		err         error
+		cfg         *viper.Viper
+		db          *sql.DB
+		appsURI     string
 	)
 
 	flag.Parse()
@@ -306,27 +225,6 @@ func main() {
 	}
 
 	appsURI = cfg.GetString("apps.callbacks_uri")
-	amqpURI := cfg.GetString("amqp.uri")
-	exchangeName := cfg.GetString("amqp.exchange.name")
-	exchangeType := cfg.GetString("amqp.exchange.type")
-
-	client, err := messaging.NewClient(amqpURI, false)
-	if err != nil {
-		logcabin.Error.Fatal(err)
-	}
-
-	eventer := NewEventHandler(
-		client,
-		exchangeName,
-		exchangeType,
-		*eventsQueue,
-		*eventsRoutingKey,
-	)
-	if err != nil {
-		logcabin.Error.Fatal(err)
-	}
-
-	eventer.Init()
 
 	logcabin.Info.Println("Connecting to the database...")
 	db, err = sql.Open("postgres", *dbURI)

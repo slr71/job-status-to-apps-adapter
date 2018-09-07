@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -11,10 +10,7 @@ import (
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
 	"github.com/cyverse-de/configurate"
-	"github.com/cyverse-de/go-events/ping"
 	"github.com/spf13/viper"
-	"github.com/streadway/amqp"
-	"gopkg.in/cyverse-de/messaging.v2"
 )
 
 var (
@@ -230,189 +226,5 @@ func TestScanAndPropagateWithServerError(t *testing.T) {
 
 	if err = mock.ExpectationsWereMet(); err != nil {
 		t.Error("unfulfilled expectations from ScanAndPropagate()")
-	}
-}
-
-type MockConsumer struct {
-	exchange     string
-	exchangeType string
-	queue        string
-	key          string
-	handler      messaging.MessageHandler
-}
-
-type MockMessage struct {
-	key string
-	msg []byte
-}
-
-type MockMessenger struct {
-	consumers         []MockConsumer
-	publishedMessages []MockMessage
-	publishTo         []string
-	publishError      bool
-}
-
-func (m *MockMessenger) Close()  {}
-func (m *MockMessenger) Listen() {}
-
-func (m *MockMessenger) AddConsumer(exchange, exchangeType, queue, key string, handler messaging.MessageHandler) {
-	m.consumers = append(m.consumers, MockConsumer{
-		exchange:     exchange,
-		exchangeType: exchangeType,
-		queue:        queue,
-		key:          key,
-		handler:      handler,
-	})
-}
-
-func (m *MockMessenger) Publish(key string, msg []byte) error {
-	if m.publishError {
-		return errors.New("publish error")
-	}
-	m.publishedMessages = append(m.publishedMessages, MockMessage{key: key, msg: msg})
-	return nil
-}
-
-func (m *MockMessenger) SetupPublishing(exchange string) error {
-	m.publishTo = append(m.publishTo, exchange)
-	return nil
-}
-
-func TestNewEventHandler(t *testing.T) {
-	client := &MockMessenger{}
-	handler := NewEventHandler(client, "exchange", "exchange-type", "queue-name", "listen-key")
-	if handler == nil {
-		t.Error("handler was nil")
-	}
-	if handler.client != client {
-		t.Errorf("client was %#v instead of %#v", handler.client, client)
-	}
-	if handler.exchange != "exchange" {
-		t.Errorf("handler.exchange was %s instead of 'exchange'", handler.exchange)
-	}
-	if handler.exchangeType != "exchange-type" {
-		t.Errorf("handler.exchangeType was %s instead of 'exchange-type'", handler.exchangeType)
-	}
-	if handler.queueName != "queue-name" {
-		t.Errorf("handler.queueName was %s instead of 'queue-name'", handler.queueName)
-	}
-	if handler.listenKey != "listen-key" {
-		t.Errorf("handler.listenKey was %s instead of 'listen-key'", handler.listenKey)
-	}
-}
-
-func TestEventHandlerInit(t *testing.T) {
-	client := &MockMessenger{
-		consumers: make([]MockConsumer, 0),
-		publishTo: make([]string, 0),
-	}
-	handler := NewEventHandler(client, "exchange", "exchange-type", "queue-name", "listen-key")
-	if handler == nil {
-		t.Error("handler was nil")
-	}
-
-	handler.Init()
-
-	mm := handler.client.(*MockMessenger)
-	numPublishTo := len(mm.publishTo)
-	if numPublishTo != 1 {
-		t.Errorf("numPublishTo was %d instead of 1", numPublishTo)
-	}
-	if mm.publishTo[0] != "exchange" {
-		t.Errorf("publishTo was %s instead of 'exchange'", mm.publishTo[0])
-	}
-	numConsumers := len(mm.consumers)
-	if numConsumers != 1 {
-		t.Errorf("numConsumers was %d instead of 1", numConsumers)
-	}
-	if mm.consumers[0].exchange != "exchange" {
-		t.Errorf("consumer exchange was %s instead of 'exchange'", mm.consumers[0].exchange)
-	}
-	if mm.consumers[0].exchangeType != "exchange-type" {
-		t.Errorf("consumer exchange type was %s instead of 'exchange-type'", mm.consumers[0].exchangeType)
-	}
-}
-
-func TestPing(t *testing.T) {
-	client := &MockMessenger{
-		publishedMessages: make([]MockMessage, 0),
-	}
-	handler := NewEventHandler(client, "exchange", "exchange-type", "queue-name", "listen-key")
-	if handler == nil {
-		t.Error("handler was nil")
-	}
-	handler.Ping(amqp.Delivery{})
-	mm := handler.client.(*MockMessenger)
-
-	numMessages := len(mm.publishedMessages)
-	if numMessages != 1 {
-		t.Errorf("numMessages was %d instead of 1", numMessages)
-	}
-	pong := &ping.Pong{}
-	if err := json.Unmarshal(mm.publishedMessages[0].msg, pong); err != nil {
-		t.Errorf("error unmarshalling message: %s", err)
-	}
-}
-
-func TestRoutePing(t *testing.T) {
-	client := &MockMessenger{
-		publishedMessages: make([]MockMessage, 0),
-	}
-	handler := NewEventHandler(client, "exchange", "exchange-type", "queue-name", "listen-key")
-	if handler == nil {
-		t.Error("handler was nil")
-	}
-	d := amqp.Delivery{
-		RoutingKey: pingKey,
-	}
-	handler.Route(d)
-	mm := handler.client.(*MockMessenger)
-
-	numMessages := len(mm.publishedMessages)
-	if numMessages != 1 {
-		t.Errorf("numMessages was %d instead of 1", numMessages)
-	}
-	pong := &ping.Pong{}
-	if err := json.Unmarshal(mm.publishedMessages[0].msg, pong); err != nil {
-		t.Errorf("error unmarshalling message: %s", err)
-	}
-}
-
-func TestRoutePong(t *testing.T) {
-	client := &MockMessenger{
-		publishedMessages: make([]MockMessage, 0),
-	}
-	handler := NewEventHandler(client, "exchange", "exchange-type", "queue-name", "listen-key")
-	if handler == nil {
-		t.Error("handler was nil")
-	}
-	d := amqp.Delivery{
-		RoutingKey: pongKey,
-	}
-	handler.Route(d)
-	mm := handler.client.(*MockMessenger)
-	numMessages := len(mm.publishedMessages)
-	if numMessages != 0 {
-		t.Errorf("numMessages was %d instead of 0", numMessages)
-	}
-}
-
-func TestRouteUnknown(t *testing.T) {
-	client := &MockMessenger{
-		publishedMessages: make([]MockMessage, 0),
-	}
-	handler := NewEventHandler(client, "exchange", "exchange-type", "queue-name", "listen-key")
-	if handler == nil {
-		t.Error("handler was nil")
-	}
-	d := amqp.Delivery{
-		RoutingKey: "unknown",
-	}
-	handler.Route(d)
-	mm := handler.client.(*MockMessenger)
-	numMessages := len(mm.publishedMessages)
-	if numMessages != 0 {
-		t.Errorf("numMessages was %d instead of 0", numMessages)
 	}
 }
