@@ -89,9 +89,9 @@ func NewPropagator(d *sql.DB, appsURI string) (*Propagator, error) {
 }
 
 // Propagate pushes the update to the apps service.
-func (p *Propagator) Propagate(status *DBJobStatusUpdate) error {
+func (p *Propagator) Propagate(uuid string) error {
 	jsu := JobStatusUpdate{
-		UUID: status.ExternalID,
+		UUID: uuid,
 	}
 
 	logcabin.Info.Printf("Job status in the propagate function for job %s is: %#v", jsu.UUID, jsu)
@@ -122,47 +122,6 @@ func (p *Propagator) Propagate(status *DBJobStatusUpdate) error {
 		return errors.New("bad response")
 	}
 
-	return nil
-}
-
-// JobUpdates returns a list of JobUpdate's which haven't exceeded their
-// retries, sorted by their SentOn field.
-func (p *Propagator) JobUpdates(extID string, maxRetries int64) ([]DBJobStatusUpdate, error) {
-	queryStr := `
-  select distinct external_id
-    from job_status_updates
-   where external_id = $1
-     and propagation_attempts < $2
-     and propagated = false`
-	rows, err := p.db.Query(queryStr, extID, maxRetries)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var retval []DBJobStatusUpdate
-	for rows.Next() {
-		r := DBJobStatusUpdate{}
-		err = rows.Scan(&r.ExternalID)
-		if err != nil {
-			return nil, err
-		}
-		retval = append(retval, r)
-	}
-	err = rows.Err()
-	return retval, err
-}
-
-// ScanAndPropagate marks any unpropagated updates that appear __before__ a
-// propagated update as propagated.
-func (p *Propagator) ScanAndPropagate(updates []DBJobStatusUpdate, maxRetries int64) error {
-	var err error
-	for _, subupdates := range updates {
-		logcabin.Info.Printf("Propagating %#v", subupdates)
-		if err = p.Propagate(&subupdates); err != nil {
-			logcabin.Error.Print(err)
-			continue
-		}
-	}
 	return nil
 }
 
@@ -256,14 +215,10 @@ func main() {
 						logcabin.Error.Print(err)
 					}
 
-					updates, err := proper.JobUpdates(jobExtID, maxRetries)
-					if err != nil {
+					if err = proper.Propagate(jobExtID); err != nil {
 						logcabin.Error.Print(err)
 					}
 
-					if err = proper.ScanAndPropagate(updates, maxRetries); err != nil {
-						logcabin.Error.Print(err)
-					}
 				}(db, *maxRetries, appsURI, jobExtID)
 			}
 

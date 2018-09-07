@@ -104,7 +104,7 @@ func TestPropagate(t *testing.T) {
 		ExternalID: "external-id",
 	}
 
-	err = p.Propagate(status)
+	err = p.Propagate("external-id")
 	if err != nil {
 		t.Errorf("error from Propagate(): %s", err)
 	}
@@ -116,115 +116,5 @@ func TestPropagate(t *testing.T) {
 
 	if actual.UUID != status.ExternalID {
 		t.Errorf("uuid field was %s instead of %s", actual.UUID, status.ExternalID)
-	}
-}
-
-func TestJobUpdates(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatalf("an error occurred creating the mock db: %s", err)
-	}
-	defer db.Close()
-
-	rows := sqlmock.NewRows([]string{
-		"external_id",
-	}).AddRow(
-		"external-id",
-	)
-	mock.ExpectQuery("select distinct external_id").
-		WithArgs("external-id", 1).
-		WillReturnRows(rows)
-
-	p, err := NewPropagator(db, "uri")
-	if err != nil {
-		t.Errorf("error calling NewPropagator(): %s", err)
-	}
-
-	updates, err := p.JobUpdates("external-id", 1)
-	if err != nil {
-		t.Errorf("error calling JobUpdates(): %s", err)
-	}
-
-	if len(updates) != 1 {
-		t.Errorf("number of updates returned was not 1: %d", len(updates))
-	}
-
-	if mock.ExpectationsWereMet(); err != nil {
-		t.Errorf("unfulfilled expectations from JobUpdates()")
-	}
-
-	if updates[0].ExternalID != "external-id" {
-		t.Errorf("id was %s instead of 'external-id'", updates[0].ExternalID)
-	}
-}
-
-func TestScanAndPropagate(t *testing.T) {
-	updates := []DBJobStatusUpdate{
-		{
-			ExternalID: "external-id",
-		},
-	}
-
-	db, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatalf("an error occurred creating the mock db: %s", err)
-	}
-	defer db.Close()
-
-	mock.ExpectBegin()
-
-	var body []byte
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, err = ioutil.ReadAll(r.Body)
-		if err != nil {
-			t.Errorf("error reading body: %s", err)
-		}
-		fmt.Fprintln(w, "Hello")
-	}))
-	defer server.Close()
-
-	p, err := NewPropagator(db, server.URL)
-	if err != nil {
-		t.Errorf("error calling NewPropagator(): %s", err)
-	}
-
-	if err = p.ScanAndPropagate(updates, 2); err != nil {
-		t.Errorf("error from ScanAndPropagate(): %s", err)
-	}
-
-	actual := &JobStatusUpdate{}
-	if err = json.Unmarshal(body, actual); err != nil {
-		t.Errorf("error unmarshalling body: %s", err)
-	}
-
-	if actual.UUID != updates[0].ExternalID {
-		t.Errorf("uuid field was %s instead of %s", actual.UUID, updates[0].ExternalID)
-	}
-}
-
-func TestScanAndPropagateWithServerError(t *testing.T) {
-	updates := []DBJobStatusUpdate{
-		{
-			ExternalID: "external-id",
-		},
-	}
-
-	db, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatalf("an error occurred creating the mock db: %s", err)
-	}
-	defer db.Close()
-
-	p, err := NewPropagator(db, "uri")
-	if err != nil {
-		t.Errorf("error calling NewPropagator(): %s", err)
-	}
-
-	if err = p.ScanAndPropagate(updates, 2); err != nil {
-		t.Errorf("error from ScanAndPropagate(): %s", err)
-	}
-
-	if err = mock.ExpectationsWereMet(); err != nil {
-		t.Error("unfulfilled expectations from ScanAndPropagate()")
 	}
 }
