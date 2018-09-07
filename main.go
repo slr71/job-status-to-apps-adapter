@@ -152,22 +152,6 @@ func (p *Propagator) JobUpdates(extID string, maxRetries int64) ([]DBJobStatusUp
 	return retval, err
 }
 
-// MarkPropagated marks the job as propagated in the database as part of the
-// transaction tracked by the *Propagator.
-func (p *Propagator) MarkPropagated(id string) error {
-	tx, err := p.db.Begin()
-	if err != nil {
-		return err
-	}
-	updateStr := `UPDATE ONLY job_status_updates SET propagated = 'true' where id = $1`
-	if _, err = tx.Exec(updateStr, id); err != nil {
-		tx.Rollback()
-		return err
-	}
-	tx.Commit()
-	return nil
-}
-
 // ScanAndPropagate marks any unpropagated updates that appear __before__ a
 // propagated update as propagated.
 func (p *Propagator) ScanAndPropagate(updates []DBJobStatusUpdate, maxRetries int64) error {
