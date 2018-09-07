@@ -100,10 +100,6 @@ func TestPropagate(t *testing.T) {
 		t.Errorf("unfulfilled expectations from NewPropagator()")
 	}
 
-	status := &DBJobStatusUpdate{
-		ExternalID: "external-id",
-	}
-
 	err = p.Propagate("external-id")
 	if err != nil {
 		t.Errorf("error from Propagate(): %s", err)
@@ -114,7 +110,7 @@ func TestPropagate(t *testing.T) {
 		t.Errorf("error unmarshalling body: %s", err)
 	}
 
-	if actual.UUID != status.ExternalID {
-		t.Errorf("uuid field was %s instead of %s", actual.UUID, status.ExternalID)
+	if actual.UUID != "external-id" {
+		t.Errorf("uuid field was %s instead of %s", actual.UUID, "external-id")
 	}
 }

@@ -37,11 +37,6 @@ type JobStatusUpdate struct {
 	UUID string `json:"uuid"`
 }
 
-// DBJobStatusUpdate represents a row from the job_status_updates table
-type DBJobStatusUpdate struct {
-	ExternalID string
-}
-
 // Unpropagated returns a []string of the UUIDs for jobs that have steps that
 // haven't been propagated yet but haven't passed their retry limit.
 func Unpropagated(d *sql.DB, maxRetries int64) ([]string, error) {
