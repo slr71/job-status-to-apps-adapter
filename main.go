@@ -181,7 +181,10 @@ func main() {
 		if err != nil {
 			logcabin.Error.Fatal(err)
 		}
-		http.Serve(sock, nil)
+		err = http.Serve(sock, nil)
+		if err != nil {
+			logcabin.Error.Fatal(err)
+		}
 	}()
 
 	for {
