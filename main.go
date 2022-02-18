@@ -26,11 +26,13 @@ import (
 	"sync"
 
 	"github.com/cyverse-de/configurate"
-	"github.com/cyverse-de/logcabin"
 	"github.com/cyverse-de/version"
 	_ "github.com/lib/pq"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
+
+var log = logrus.WithFields(logrus.Fields{"service": "job-status-to-apps-adapter"})
 
 // JobStatusUpdate contains the data POSTed to the apps service.
 type JobStatusUpdate struct {
@@ -89,30 +91,30 @@ func (p *Propagator) Propagate(uuid string) error {
 		UUID: uuid,
 	}
 
-	logcabin.Info.Printf("Job status in the propagate function for job %s is: %#v", jsu.UUID, jsu)
+	log.Infof("Job status in the propagate function for job %s is: %#v", jsu.UUID, jsu)
 	msg, err := json.Marshal(jsu)
 	if err != nil {
-		logcabin.Error.Print(err)
+		log.Error(err)
 		return err
 	}
 
 	buf := bytes.NewBuffer(msg)
 	if err != nil {
-		logcabin.Error.Print(err)
+		log.Error(err)
 		return err
 	}
 
-	logcabin.Info.Printf("Message to propagate: %s", string(msg))
+	log.Infof("Message to propagate: %s", string(msg))
 
-	logcabin.Info.Printf("Sending job status to %s in the propagate function for job %s", p.appsURI, jsu.UUID)
+	log.Infof("Sending job status to %s in the propagate function for job %s", p.appsURI, jsu.UUID)
 	resp, err := http.Post(p.appsURI, "application/json", buf)
 	if err != nil {
-		logcabin.Error.Printf("Error sending job status to %s in the propagate function for job %s: %#v", p.appsURI, jsu.UUID, err)
+		log.Errorf("Error sending job status to %s in the propagate function for job %s: %#v", p.appsURI, jsu.UUID, err)
 		return err
 	}
 	defer resp.Body.Close()
 
-	logcabin.Info.Printf("Response from %s in the propagate function for job %s is: %s", p.appsURI, jsu.UUID, resp.Status)
+	log.Infof("Response from %s in the propagate function for job %s is: %s", p.appsURI, jsu.UUID, resp.Status)
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return errors.New("bad response")
 	}
@@ -135,8 +137,6 @@ func main() {
 
 	flag.Parse()
 
-	logcabin.Init("job-status-to-apps-adapter", "job-status-to-apps-adapter")
-
 	if *showVersion {
 		version.AppVersion()
 		os.Exit(0)
@@ -150,11 +150,11 @@ func main() {
 
 	cfg, err = configurate.InitDefaults(*cfgPath, configurate.JobServicesDefaults)
 	if err != nil {
-		logcabin.Error.Print(err)
+		log.Error(err)
 		os.Exit(-1)
 	}
 
-	logcabin.Info.Println("Done reading config.")
+	log.Info("Done reading config.")
 
 	if *dbURI == "" {
 		*dbURI = cfg.GetString("db.uri")
@@ -164,26 +164,26 @@ func main() {
 
 	appsURI = cfg.GetString("apps.callbacks_uri")
 
-	logcabin.Info.Println("Connecting to the database...")
+	log.Info("Connecting to the database...")
 	db, err = sql.Open("postgres", *dbURI)
 	if err != nil {
-		logcabin.Error.Fatal(err)
+		log.Fatal(err)
 	}
 
 	err = db.Ping()
 	if err != nil {
-		logcabin.Error.Fatal(err)
+		log.Fatal(err)
 	}
-	logcabin.Info.Println("Connected to the database")
+	log.Info("Connected to the database")
 
 	go func() {
 		sock, err := net.Listen("tcp", "0.0.0.0:60000")
 		if err != nil {
-			logcabin.Error.Fatal(err)
+			log.Fatal(err)
 		}
 		err = http.Serve(sock, nil)
 		if err != nil {
-			logcabin.Error.Fatal(err)
+			log.Fatal(err)
 		}
 	}()
 
@@ -193,7 +193,7 @@ func main() {
 
 		unpropped, err := Unpropagated(db, *maxRetries)
 		if err != nil {
-			logcabin.Error.Fatal(err)
+			log.Fatal(err)
 		}
 
 		for *batchSize < len(unpropped) {
@@ -210,11 +210,11 @@ func main() {
 
 					proper, err := NewPropagator(db, appsURI)
 					if err != nil {
-						logcabin.Error.Print(err)
+						log.Error(err)
 					}
 
 					if err = proper.Propagate(jobExtID); err != nil {
-						logcabin.Error.Print(err)
+						log.Error(err)
 					}
 
 				}(db, *maxRetries, appsURI, jobExtID)
