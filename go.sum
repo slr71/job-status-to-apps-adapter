@@ -30,6 +30,8 @@ github.com/kr/fs v0.0.0-20131111012553-2788f0dbd169 h1:YUrU1/jxRqnt0PSrKj1Uj/wEj
 github.com/kr/fs v0.0.0-20131111012553-2788f0dbd169/go.mod h1:glhvuHOU9Hy7/8PwwdtnarXqLagOX0b/TbZx2zLMqEg=
 github.com/lib/pq v0.0.0-20160806144029-80f8150043c8 h1:ymrmOy9nqFlWI+NXdLzvAUcQuYlOSqW2/UconD0I3BM=
 github.com/lib/pq v0.0.0-20160806144029-80f8150043c8/go.mod h1:5WUZQaWbwv1U+lTReE5YruASi9Al49XbQIvNi/34Woo=
+github.com/lib/pq v1.10.4 h1:SO9z7FRPzA03QhHKJrH5BXA6HU1rS4V2nIVrrNC1iYk=
+github.com/lib/pq v1.10.4/go.mod h1:AlVN5x4E4T544tWzH6hKfbfQvm3HdbOxrmggDNAPY9o=
 github.com/magiconair/properties v1.7.1-0.20160816085511-61b492c03cf4 h1:0z4tHs3fkvPujAtAFZIXCz+avXWmnPc09R5hJqOYTQM=
 github.com/magiconair/properties v1.7.1-0.20160816085511-61b492c03cf4/go.mod h1:PppfXfuXeibc/6YijjN8zIbojt8czPbwD3XqdrwzmxQ=
 github.com/mitchellh/mapstructure v0.0.0-20160808181253-ca63d7c062ee h1:kK7VuFVykgt0LfMSloWYjDOt4TnOcL0AxF0/rDq2VkM=

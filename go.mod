@@ -11,7 +11,7 @@ require (
 	github.com/fsnotify/fsnotify v1.3.2-0.20160816051541-f12c6236fe7b // indirect
 	github.com/hashicorp/hcl v0.0.0-20160822214145-baeb59c71071 // indirect
 	github.com/kr/fs v0.0.0-20131111012553-2788f0dbd169 // indirect
-	github.com/lib/pq v0.0.0-20160806144029-80f8150043c8
+	github.com/lib/pq v1.10.4
 	github.com/magiconair/properties v1.7.1-0.20160816085511-61b492c03cf4 // indirect
 	github.com/mitchellh/mapstructure v0.0.0-20160808181253-ca63d7c062ee // indirect
 	github.com/pelletier/go-buffruneio v0.1.0 // indirect
