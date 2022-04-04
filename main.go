@@ -14,6 +14,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -26,13 +27,22 @@ import (
 	"sync"
 
 	"github.com/cyverse-de/configurate"
+	"github.com/cyverse-de/dbutil"
+	"github.com/cyverse-de/go-mod/otelutils"
 	"github.com/cyverse-de/version"
 	_ "github.com/lib/pq"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
 )
 
-var log = logrus.WithFields(logrus.Fields{"service": "job-status-to-apps-adapter"})
+const serviceName = "job-status-to-apps-adapter"
+const otelName = "github.com/cyverse-de/job-status-to-apps-adapter"
+
+var log = logrus.WithFields(logrus.Fields{"service": serviceName})
+var httpClient = http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)}
 
 // JobStatusUpdate contains the data POSTed to the apps service.
 type JobStatusUpdate struct {
@@ -41,13 +51,13 @@ type JobStatusUpdate struct {
 
 // Unpropagated returns a []string of the UUIDs for jobs that have steps that
 // haven't been propagated yet but haven't passed their retry limit.
-func Unpropagated(d *sql.DB, maxRetries int64) ([]string, error) {
+func Unpropagated(ctx context.Context, d *sql.DB, maxRetries int64) ([]string, error) {
 	queryStr := `
 	select distinct external_id
 	  from job_status_updates
 	 where propagated = 'false'
 	   and propagation_attempts < $1`
-	rows, err := d.Query(queryStr, maxRetries)
+	rows, err := d.QueryContext(ctx, queryStr, maxRetries)
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +96,7 @@ func NewPropagator(d *sql.DB, appsURI string) (*Propagator, error) {
 }
 
 // Propagate pushes the update to the apps service.
-func (p *Propagator) Propagate(uuid string) error {
+func (p *Propagator) Propagate(ctx context.Context, uuid string) error {
 	jsu := JobStatusUpdate{
 		UUID: uuid,
 	}
@@ -107,7 +117,15 @@ func (p *Propagator) Propagate(uuid string) error {
 	log.Infof("Message to propagate: %s", string(msg))
 
 	log.Infof("Sending job status to %s in the propagate function for job %s", p.appsURI, jsu.UUID)
-	resp, err := http.Post(p.appsURI, "application/json", buf)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.appsURI, buf)
+	if err != nil {
+		log.Errorf("Error sending job status to %s in the propagate function for job %s: %#v", p.appsURI, jsu.UUID, err)
+		return err
+	}
+
+	req.Header.Set("content-type", "application/json")
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		log.Errorf("Error sending job status to %s in the propagate function for job %s: %#v", p.appsURI, jsu.UUID, err)
 		return err
@@ -134,6 +152,11 @@ func main() {
 		db          *sql.DB
 		appsURI     string
 	)
+
+	var tracerCtx, cancel = context.WithCancel(context.Background())
+	defer cancel()
+	shutdown := otelutils.TracerProviderFromEnv(tracerCtx, serviceName, func(e error) { log.Fatal(e) })
+	defer shutdown()
 
 	flag.Parse()
 
@@ -165,13 +188,17 @@ func main() {
 	appsURI = cfg.GetString("apps.callbacks_uri")
 
 	log.Info("Connecting to the database...")
-	db, err = sql.Open("postgres", *dbURI)
+	connector, err := dbutil.NewDefaultConnector("1m")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	err = db.Ping()
+	db, err = connector.Connect("postgres", *dbURI)
 	if err != nil {
+		log.Fatal(err)
+	}
+
+	if err = db.Ping(); err != nil {
 		log.Fatal(err)
 	}
 	log.Info("Connected to the database")
@@ -188,11 +215,13 @@ func main() {
 	}()
 
 	for {
+		ctx, span := otel.Tracer(otelName).Start(context.Background(), "propagation loop")
 		var batches [][]string
 		var wg sync.WaitGroup
 
-		unpropped, err := Unpropagated(db, *maxRetries)
+		unpropped, err := Unpropagated(ctx, db, *maxRetries)
 		if err != nil {
+			span.End()
 			log.Fatal(err)
 		}
 
@@ -205,22 +234,29 @@ func main() {
 			for _, jobExtID := range batch {
 				wg.Add(1)
 
-				go func(db *sql.DB, maxRetries int64, appsURI string, jobExtID string) {
+				go func(ctx context.Context, db *sql.DB, maxRetries int64, appsURI string, jobExtID string) {
 					defer wg.Done()
+					separatedSpanContext := trace.SpanContextFromContext(ctx)
+					outerCtx := trace.ContextWithSpanContext(context.Background(), separatedSpanContext)
+
+					ctx, span := otel.Tracer(otelName).Start(outerCtx, "propagator goroutine")
+					defer span.End()
 
 					proper, err := NewPropagator(db, appsURI)
 					if err != nil {
 						log.Error(err)
 					}
 
-					if err = proper.Propagate(jobExtID); err != nil {
+					if err = proper.Propagate(ctx, jobExtID); err != nil {
 						log.Error(err)
 					}
 
-				}(db, *maxRetries, appsURI, jobExtID)
+				}(ctx, db, *maxRetries, appsURI, jobExtID)
 			}
 
 			wg.Wait()
 		}
+
+		span.End()
 	}
 }
