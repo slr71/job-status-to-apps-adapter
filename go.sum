@@ -6,6 +6,8 @@ github.com/cyverse-de/dbutil v1.0.1 h1:aCfckMIIJcPGZw9kJ5a1sJSji03/swkCsC7iwD5cX
 github.com/cyverse-de/dbutil v1.0.1/go.mod h1:31IZYWBDxS/f4Gz3L/Nx17Q5HghARlB7VFdfjjv50M4=
 github.com/cyverse-de/go-mod/otelutils v0.0.1 h1:DAkj2tn8umxM7j9+zokrsQK/q5HTWQT8YjuE1+4xruE=
 github.com/cyverse-de/go-mod/otelutils v0.0.1/go.mod h1:8P2jRGnvUsH4qtyVP0W6KiV5iSr102pLkzKFgkYJ4og=
+github.com/cyverse-de/go-mod/otelutils v0.0.2 h1:7O3jWQgf+PIIACSwtQM5SNtn6xTxxaLIUW6kjEKUpHM=
+github.com/cyverse-de/go-mod/otelutils v0.0.2/go.mod h1:8P2jRGnvUsH4qtyVP0W6KiV5iSr102pLkzKFgkYJ4og=
 github.com/cyverse-de/version v0.0.0-20160721234331-5119d6500655 h1:FOEB5zuAJqQFKT4RV4XGrOOLtNIT5WCwSNGpiV+kZVo=
 github.com/cyverse-de/version v0.0.0-20160721234331-5119d6500655/go.mod h1:RPIIJ3WA8E1hR5MXTHJgUYMRcgF2iusaRjO9612ppFs=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
@@ -93,6 +95,8 @@ golang.org/x/crypto v0.0.0-20160830154008-b13fc1fd382d/go.mod h1:6SG95UA2DQfeDnf
 golang.org/x/sys v0.0.0-20191026070338-33540a1f6037/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
 golang.org/x/sys v0.0.0-20210423185535-09eb48e85fd7 h1:iGu644GcxtEcrInvDsQRCwJjtCIOlT2V7IRt6ah2Whw=
 golang.org/x/sys v0.0.0-20210423185535-09eb48e85fd7/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
+golang.org/x/sys v0.0.0-20220403205710-6acee93ad0eb h1:PVGECzEo9Y3uOidtkHGdd347NjLtITfJFO9BxFpmRoo=
+golang.org/x/sys v0.0.0-20220403205710-6acee93ad0eb/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
 golang.org/x/text v0.0.0-20160816092153-d69c40b4be55 h1:AMun3NZz9PVPTFOCm07GHIjLo+gkQOwfq+e2L5n1KUQ=
 golang.org/x/text v0.0.0-20160816092153-d69c40b4be55/go.mod h1:NqM8EUOU14njkJ3fqMW+pc6Ldnwhi/IjpwHt7yyuwOQ=
 golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=

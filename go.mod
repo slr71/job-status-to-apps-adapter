@@ -6,7 +6,7 @@ require (
 	github.com/DATA-DOG/go-sqlmock v1.1.4-0.20160722192640-05f39e9110c0
 	github.com/cyverse-de/configurate v0.0.0-20160830203814-4b85e07b4aea
 	github.com/cyverse-de/dbutil v1.0.1
-	github.com/cyverse-de/go-mod/otelutils v0.0.1
+	github.com/cyverse-de/go-mod/otelutils v0.0.2
 	github.com/cyverse-de/version v0.0.0-20160721234331-5119d6500655
 	github.com/fsnotify/fsnotify v1.3.2-0.20160816051541-f12c6236fe7b // indirect
 	github.com/hashicorp/hcl v0.0.0-20160822214145-baeb59c71071 // indirect
@@ -27,6 +27,7 @@ require (
 	go.opentelemetry.io/otel v1.6.1
 	go.opentelemetry.io/otel/trace v1.6.1
 	golang.org/x/crypto v0.0.0-20160830154008-b13fc1fd382d // indirect
+	golang.org/x/sys v0.0.0-20220403205710-6acee93ad0eb // indirect
 	golang.org/x/text v0.0.0-20160816092153-d69c40b4be55 // indirect
 	gopkg.in/check.v1 v1.0.0-20160105164936-4f90aeace3a2 // indirect
 	gopkg.in/yaml.v2 v2.0.0-20160715033755-e4d366fc3c79 // indirect
