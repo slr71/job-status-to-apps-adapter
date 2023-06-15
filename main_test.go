@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -39,7 +40,7 @@ func TestUnpropagated(t *testing.T) {
 		WithArgs(1).
 		WillReturnRows(rows)
 
-	_, err = Unpropagated(db, 1)
+	_, err = Unpropagated(context.Background(), db, 1)
 	if err != nil {
 		t.Errorf("error calling Unpropagated: %s", err)
 	}
@@ -100,7 +101,7 @@ func TestPropagate(t *testing.T) {
 		t.Errorf("unfulfilled expectations from NewPropagator()")
 	}
 
-	err = p.Propagate("external-id")
+	err = p.Propagate(context.Background(), "external-id")
 	if err != nil {
 		t.Errorf("error from Propagate(): %s", err)
 	}
